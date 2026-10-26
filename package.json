@@ -1,0 +1,33 @@
+{
+  "name": "hearthmarket",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A pixel village where every NPC is an AI agent with its own NEAR account, trading with a world market driven by real weather.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "assets": "node scripts/import-assets.mjs",
+    "dev": "npm run dev -w @hearth/client",
+    "dev:server": "npm run dev -w @hearth/server",
+    "build": "npm run build -w @hearth/client",
+    "sim": "tsx scripts/sim.ts",
+    "test": "vitest run",
+    "test:injection": "vitest run apps/server/test/injection.test.ts",
+    "typecheck": "tsc -p packages/economy && tsc -p apps/server && tsc -p apps/client && tsc -p scripts",
+    "contract:test": "cd contracts/hearth && cargo test",
+    "contract:build": "cd contracts/hearth && cargo near build non-reproducible-wasm",
+    "setup:testnet": "tsx --env-file-if-exists=.env scripts/setup-testnet.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -1,0 +1,292 @@
+{
+ "description": "Scripted 7-day demo story (not recorded data): a Kansas heatwave builds over days 2-5, a Malacca storm on days 4-5, Pilbara gusts on day 6. Used by replay mode so every demo shows the same arc. Record real days with `npm run world:record`.",
+ "days": [
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 22.0,
+     "precip": 1.0
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   }
+  },
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 18.0,
+     "precip": 3.0
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 23.0,
+     "precip": 0.5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 1.96
+    }
+   }
+  },
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 23.0,
+     "precip": 0.5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 2.14
+    }
+   }
+  },
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 24.0,
+     "precip": 0.0
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 2.14
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   }
+  },
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 22.0,
+     "precip": 1.0
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 11.399999999999999,
+     "wind": 26.0
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 1.6
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   }
+  },
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 9.6,
+     "wind": 22.0
+    },
+    "pilbara": {
+     "gust": 82.0
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   }
+  },
+  {
+   "source": "scripted-demo",
+   "metrics": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   },
+   "forecast": {
+    "kansas": {
+     "tmax": 14,
+     "precip": 5
+    },
+    "cantho": {
+     "precip": 18
+    },
+    "kamloops": {
+     "tmax": 6,
+     "wind": 14
+    },
+    "pilbara": {
+     "gust": 42
+    },
+    "malacca": {
+     "wave": 0.7
+    }
+   }
+  }
+ ]
+}
