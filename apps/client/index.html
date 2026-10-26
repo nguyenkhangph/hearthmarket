@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hearthmarket</title>
+    <meta name="description" content="A pixel village where every NPC is an AI agent with its own NEAR account, trading with a world market driven by real weather." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  </head>
+  <body>
+    <div id="login" class="overlay">
+      <div class="login-card">
+        <div class="brand"><span class="flame">▲</span> HEARTHMARKET</div>
+        <h1>A village that runs its own economy</h1>
+        <p>Every NPC is an AI agent with its own NEAR account. Real weather in five producing regions moves world prices; Bruno the merchant carries them into the village. Guilds pool gold, back NPCs and compete on returns.</p>
+        <button id="guest" class="primary big-btn">Play as guest</button>
+        <form id="email-form">
+          <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
+          <button type="submit">Continue with email</button>
+        </form>
+        <p class="muted small">No wallet, no seed phrase. Guest mode runs the whole village in your browser with a replayed week of world weather.</p>
+      </div>
+    </div>
+
+    <header id="topbar">
+      <div class="brand"><span class="flame">▲</span> HEARTHMARKET</div>
+      <div class="chip" id="gold"></div>
+      <div class="chip" id="season"></div>
+      <div class="chip" id="guild-chip"></div>
+      <nav>
+        <button data-panel="market">Market</button>
+        <button data-panel="guild">Guild</button>
+        <button data-panel="economy">Economy</button>
+        <button data-panel="npc">NPCs</button>
+      </nav>
+      <div class="spacer"></div>
+      <label class="guest-only speed">Speed
+        <select id="speed">
+          <option value="3">slow</option>
+          <option value="1.5" selected>normal</option>
+          <option value="0.4">fast</option>
+          <option value="0.08">very fast</option>
+        </select>
+      </label>
+      <button id="place-order" class="primary">Place order</button>
+      <div class="chip" id="account"></div>
+    </header>
+
+    <main>
+      <section id="stage">
+        <div id="game"></div>
+        <div id="labels"></div>
+        <div id="quests" class="card"></div>
+        <div id="panel" class="panel hidden"></div>
+        <div id="toast" class="toast"></div>
+      </section>
+      <aside id="side">
+        <div class="card" id="world"></div>
+        <div class="card feed">
+          <h3>Village feed</h3>
+          <ul id="feed-list"></ul>
+        </div>
+        <div class="credits muted small">Art: Cute Fantasy RPG © Kenmi · Weather: Open-Meteo (CC BY 4.0) · Built at NEAR HACKATHON</div>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

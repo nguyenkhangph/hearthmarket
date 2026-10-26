@@ -1,0 +1,26 @@
+node_modules/
+dist/
+.vite/
+coverage/
+*.log
+.DS_Store
+
+# Secrets: keys live in env vars, never in the repo
+.env
+.env.*
+!.env.example
+*.pem
+**/neardev/
+credentials/
+
+# Cute Fantasy RPG (c) Kenmi - premium license forbids redistribution.
+# Assets are imported locally with `npm run assets` and never committed.
+apps/client/public/assets/cute_fantasy/
+vendor/Cute_Fantasy/
+*.zip
+
+# Rust
+contracts/**/target/
+
+# Submission payload contains personal data
+submission.json
