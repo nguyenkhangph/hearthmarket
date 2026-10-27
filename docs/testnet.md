@@ -14,9 +14,22 @@ winget install Microsoft.VisualStudio.2022.BuildTools   # tick "Desktop developm
 Close and reopen the terminal, then:
 
 ```powershell
+# make ~/.cargo/bin permanent on PATH
+$cargoBin = "$env:USERPROFILE\.cargo\bin"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ($userPath -notlike "*$cargoBin*") { [Environment]::SetEnvironmentVariable("Path", "$userPath;$cargoBin", "User") }
+$env:Path += ";$cargoBin"
+
 rustup target add wasm32-unknown-unknown
-cargo install --locked cargo-near
-cargo install --locked near-cli-rs
+
+# prebuilt installers (building from source needs NASM on Windows)
+irm https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.ps1 | iex
+irm https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-installer.ps1 | iex
+
+# near-sdk's unit-testing pulls aws-lc-sys, which needs NASM on Windows unless told to use prebuilt objects
+[Environment]::SetEnvironmentVariable("AWS_LC_SYS_PREBUILT_NASM", "1", "User")
+$env:AWS_LC_SYS_PREBUILT_NASM = "1"
+
 npm run contract:test      # 20 passed
 ```
 
