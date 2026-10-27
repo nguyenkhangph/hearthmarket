@@ -1,4 +1,5 @@
 import type { Action } from './types.ts';
+import type { NpcId } from './defs.ts';
 import type { Gold } from './money.ts';
 import { fmt } from './money.ts';
 
@@ -11,8 +12,29 @@ import { fmt } from './money.ts';
  */
 
 /** Methods an NPC function-call key may call on the hearth contract. */
-export const NPC_ALLOWED_METHODS = ['produce', 'market_buy', 'market_sell', 'hire', 'fill_order', 'place_order'] as const;
+export const NPC_ALLOWED_METHODS = ['produce', 'craft', 'market_buy', 'market_sell', 'hire', 'fill_order', 'place_order', 'world_trade'] as const;
 export type NpcMethod = (typeof NPC_ALLOWED_METHODS)[number];
+
+/**
+ * The method list on each NPC's function-call key (least privilege). NEAR refuses any
+ * other method for that key; the contract then checks who may produce, craft or trade
+ * with the world.
+ */
+const TRADE: NpcMethod[] = ['market_buy', 'market_sell', 'hire', 'fill_order', 'place_order'];
+export const NPC_KEY_METHODS: Record<NpcId, NpcMethod[]> = {
+  mike: ['produce', ...TRADE],
+  jack: ['produce', ...TRADE],
+  buba: ['produce', ...TRADE],
+  chloe: ['craft', ...TRADE],
+  theo: ['craft', ...TRADE],
+  bruno: ['world_trade', ...TRADE],
+};
+
+/** Methods on the operator's function-call key (the game server, on the contract account). */
+export const OPERATOR_METHODS = [
+  'reconcile', 'post_world_data', 'advance_day', 'mint_badge',
+  'relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order',
+] as const;
 
 export const ACTION_METHOD: Record<Action['type'], string> = {
   market_buy: 'market_buy',

@@ -13,7 +13,12 @@ export interface LlmEndpoint {
   baseUrl: string;
   apiKey: string;
   model: string;
+  maxTokens?: number;
+  timeoutMs?: number;
 }
+
+/** NEAR AI Cloud, OpenAI-compatible (https://docs.near.ai/cloud/guides/openai-compatibility). */
+export const NEAR_AI_DEFAULT_BASE_URL = 'https://cloud-api.near.ai/v1';
 
 /**
  * Minimal client for any OpenAI-compatible chat completions API.
@@ -30,11 +35,23 @@ export class OpenAiCompatible implements LlmClient {
     const res = await this.fetchImpl(`${this.ep.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.ep.apiKey}` },
-      body: JSON.stringify({ model: this.ep.model, messages, temperature: 0.4, max_tokens: 300 }),
+      body: JSON.stringify({ model: this.ep.model, messages, temperature: 0.4, max_tokens: this.ep.maxTokens ?? 600 }),
+      signal: AbortSignal.timeout(this.ep.timeoutMs ?? 20_000),
     });
-    if (!res.ok) throw new Error(`${this.ep.name} HTTP ${res.status}`);
-    const json = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    if (!res.ok) throw new Error(`${this.ep.name} HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 160)}`);
+    const json = (await res.json()) as { choices?: { message?: { content?: string | null } }[] };
     return json.choices?.[0]?.message?.content ?? '';
+  }
+
+  /** Model ids the endpoint offers (GET /models). */
+  async models(): Promise<string[]> {
+    const res = await this.fetchImpl(`${this.ep.baseUrl.replace(/\/$/, '')}/models`, {
+      headers: { authorization: `Bearer ${this.ep.apiKey}` },
+      signal: AbortSignal.timeout(this.ep.timeoutMs ?? 20_000),
+    });
+    if (!res.ok) throw new Error(`${this.ep.name} /models HTTP ${res.status}`);
+    const json = (await res.json()) as { data?: { id?: string }[] };
+    return (json.data ?? []).map((m) => m.id ?? '').filter(Boolean);
   }
 }
 

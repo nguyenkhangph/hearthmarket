@@ -11,10 +11,17 @@ export interface HaggleResult {
   brain: string;
 }
 
+/** How a player signs in to the game server. */
+export type HelloAuth = { kind: 'google'; idToken: string } | { kind: 'dev'; email: string; name?: string };
+
 /** Where the village runs: in the browser (guest / judge demo) or on the game server. */
 export interface GameSource {
   readonly mode: 'guest' | 'online';
   readonly playerId: string;
+  /** the player's NEAR account (online), e.g. a 64-hex implicit account */
+  readonly account?: string;
+  /** 'near' when the server mirrors the village onto NEAR testnet */
+  readonly chain?: 'mock' | 'near';
   village(): Village;
   act(a: Action): Promise<ActionResult>;
   haggle(npc: NpcId, message: string): Promise<HaggleResult>;
@@ -111,6 +118,8 @@ export class LocalSource implements GameSource {
   }
 }
 
+export class SignInError extends Error {}
+
 /** Connects to the game server (apps/server) over WebSocket. The server is authoritative. */
 export class RemoteSource implements GameSource {
   readonly mode = 'online' as const;
@@ -121,15 +130,24 @@ export class RemoteSource implements GameSource {
   private pending = new Map<number, (r: unknown) => void>();
   private nextId = 1;
   private seen = new Set<string>();
+  playerId = '';
+  account?: string;
+  chain?: 'mock' | 'near';
   ready: Promise<void>;
 
-  constructor(private url: string, readonly playerId: string, private name: string) {
+  constructor(private url: string, auth: HelloAuth) {
     this.ws = new WebSocket(url);
     this.ready = new Promise((resolve, reject) => {
       this.ws.onerror = () => reject(new Error(`cannot reach ${url}`));
       this.ws.onmessage = (ev) => {
         const msg = JSON.parse(ev.data as string);
-        if (msg.type === 'state') {
+        if (msg.type === 'welcome') {
+          this.playerId = msg.playerId;
+          this.account = msg.account;
+          this.chain = msg.chain;
+        } else if (msg.type === 'denied') {
+          reject(new SignInError(msg.reason));
+        } else if (msg.type === 'state') {
           this.applyState(msg.state as VillageState);
           resolve();
         } else if (msg.type === 'result') {
@@ -137,7 +155,7 @@ export class RemoteSource implements GameSource {
           this.pending.delete(msg.id);
         }
       };
-      this.ws.onopen = () => this.ws.send(JSON.stringify({ type: 'hello', playerId, name }));
+      this.ws.onopen = () => this.ws.send(JSON.stringify({ type: 'hello', auth }));
     });
   }
 

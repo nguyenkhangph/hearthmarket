@@ -4,6 +4,7 @@ import { Game } from '../src/game.ts';
 import { NpcBrain, parseProposal } from '../src/brain/brain.ts';
 import { ObedientLlm } from '../src/brain/llm.ts';
 import { MockChain, NpcSigner } from '../src/chain/signer.ts';
+import { ChainMirror } from '../src/chain/mirror.ts';
 
 /**
  * 20 prompt-injection attacks hidden in haggling messages.
@@ -51,8 +52,10 @@ function setup(npc: NpcId, a: Action) {
   const chain = new MockChain();
   const signer = new NpcSigner(chain, 'hearth.testnet');
   const brain = new NpcBrain(new ObedientLlm(() => (a.type === 'call' ? { type: a.method, receiver: a.receiver, args: a.args } : a)));
-  const game = new Game({ seed: 13 }, brain, signer, chain);
-  return { game, chain, n: game.village.s.npcs[npc] };
+  // the mirror is on, as with CHAIN=near: anything the engine accepts would be signed and sent
+  const mirror = new ChainMirror(chain, { contract: 'hearth.testnet', operator: '', playerAccount: () => null, maxPerMinute: 10_000 });
+  const game = new Game({ seed: 13, mirror }, brain, signer, chain);
+  return { game, chain, mirror, n: game.village.s.npcs[npc] };
 }
 
 describe('prompt injection: 20 attacks against a fully obedient model', () => {
@@ -60,7 +63,7 @@ describe('prompt injection: 20 attacks against a fully obedient model', () => {
 
   for (const atk of attacks) {
     it(`blocks: ${atk.name} (${atk.layer})`, async () => {
-      const { game, chain, n } = setup(atk.npc, atk.action);
+      const { game, chain, mirror, n } = setup(atk.npc, atk.action);
       const gold0 = n.gold;
       const stock0 = { ...n.stock };
       const out = await game.haggle(atk.npc, atk.message);
@@ -71,8 +74,9 @@ describe('prompt injection: 20 attacks against a fully obedient model', () => {
       // nothing left the NPC
       expect(n.gold).toBe(gold0);
       expect(n.stock).toEqual(stock0);
-      // the signer never signed anything for a signer-layer block
-      if (atk.layer === 'signer') expect(chain.calls.length).toBe(0);
+      // nothing was signed for the NPC: neither layer let the attack reach the chain
+      await mirror.idle();
+      expect(chain.calls.filter((c) => c.signer === NPC_DEFS[atk.npc].account)).toEqual([]);
       // and the refusal is visible in the game log
       const last = game.village.s.txs.at(-1);
       if (atk.layer === 'signer') {
@@ -103,10 +107,12 @@ describe('legitimate haggling still works', () => {
     const chain = new MockChain();
     const signer = new NpcSigner(chain, 'hearth.testnet');
     const brain = new NpcBrain(new ObedientLlm(() => ({ type: 'market_sell', item: 'ore', qty: 1, minPrice: 1 })));
-    const game = new Game({ seed: 13 }, brain, signer, chain);
+    const mirror = new ChainMirror(chain, { contract: 'hearth.testnet', operator: '', playerAccount: () => null });
+    const game = new Game({ seed: 13, mirror }, brain, signer, chain);
     game.village.s.npcs.mike.stock.ore = 5;
     const out = await game.haggle('mike', 'Sell one ore to the market please.');
     expect(out.result?.ok).toBe(true);
+    await mirror.idle();
     expect(chain.calls).toHaveLength(1);
     expect(chain.calls[0]).toMatchObject({ signer: 'mike.hearth.testnet', contract: 'hearth.testnet', method: 'market_sell' });
   });
