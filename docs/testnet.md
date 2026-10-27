@@ -160,6 +160,7 @@ Then `WORLD_SOURCE=open-meteo` in `.env` and restart the server. The oracle post
 
 | Message | Fix |
 | --- | --- |
+| `-429 ... Rate limits exceeded` (FastNEAR) | Public RPCs limit requests. List several in `.env`: `NEAR_RPC_URL=https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs` (the server moves to the next one on a 429), keep `SECONDS_PER_GAME_HOUR=2.5` or slower, and `CHAIN_MAX_TX_PER_MINUTE=40` |
 | `-429 ... ENDPOINT IS DEPRECATED` | `rpc.testnet.near.org` is rate-limited/deprecated. Set `NEAR_RPC_URL=https://test.rpc.fastnear.com` in `.env` and restart the server |
 | `cargo near deploy` fails with `LNK2019 unresolved external symbol` | Windows ABI step. Use `cargo near build non-reproducible-wasm --no-abi` and `near contract deploy ... use-file target\near\hearth.wasm` as above |
 | `does not exist on testnet` | Step 2 not done, or a typo in `HEARTH_CONTRACT` |
