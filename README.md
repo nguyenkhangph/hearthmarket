@@ -4,7 +4,7 @@ A pixel-art village where every NPC is an AI agent with its own NEAR account. Re
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
-> Status: early build, 26 Oct 2026. The game loop, economy engine, NPC guard, injection tests and contract core run today. Items marked *planned* in the table at the bottom are not built yet.
+> Status: early build, 27 Oct 2026. The game loop, economy engine, NPC guard, injection tests and contract core run today. Items marked *planned* in the table at the bottom are not built yet.
 
 ## The problem
 
@@ -30,7 +30,7 @@ npm run dev            # http://localhost:5173
 
 Online mode (server-authoritative, shared village): `npm run dev:server` then open `http://localhost:5173/?server=ws://localhost:8787` and continue with an email.
 
-On NEAR testnet: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
+Live deployment: contract [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns), NPCs `mike/jack/buba/chloe/theo/bruno.hearthmarket.testnet`. To run your own: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
 
 ### Verify the claims
 
@@ -106,7 +106,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | 4 AI guilds playing like people | working |
 | Spending guard + 20 injection tests | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working for rule-based deals; LLM decisions when `NPC_BRAIN=llm` |
-| Contract deployed on testnet, NPC keys, on-chain mirror of production and deals | code + one-command setup ready (`docs/testnet.md`, `npm run setup:testnet`), not deployed yet |
+| Contract deployed on testnet, NPC keys, on-chain mirror of production and deals | **deployed**: `hearthmarket.testnet`; NPC `produce` and `hire` calls are signed by their own function-call keys (example: [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF)); over-budget calls are refused by the contract (`over the daily budget`) |
 | NEP-141/245/171, social login, market wars, badges | planned |
 
 ## Credits
