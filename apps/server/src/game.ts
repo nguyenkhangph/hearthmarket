@@ -51,8 +51,14 @@ export class Game {
     const placeholder = `pending${(this.pendingN++).toString().padStart(6, '0')}xx`;
     this.chain
       .call(signer, this.signer.contract, method, args)
-      .then((hash) => this.patchHash(placeholder, hash))
-      .catch((e: Error) => this.patchHash(placeholder, `failed:${e.message.slice(0, 40)}`));
+      .then((hash) => {
+        console.log(`chain ok   ${signer} ${method} tx=${hash}`);
+        this.patchHash(placeholder, hash);
+      })
+      .catch((e: Error) => {
+        console.error(`chain FAIL ${signer} ${method}: ${e.message}`);
+        this.patchHash(placeholder, `failed:${e.message.slice(0, 40)}`);
+      });
     return placeholder;
   }
 
