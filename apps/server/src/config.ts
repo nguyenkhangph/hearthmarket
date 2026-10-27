@@ -18,7 +18,7 @@ export const config = {
   chain: (env.CHAIN ?? 'mock') as 'mock' | 'near',
   near: {
     network: env.NEAR_NETWORK ?? 'testnet',
-    rpcUrl: env.NEAR_RPC_URL ?? 'https://rpc.testnet.near.org',
+    rpcUrl: env.NEAR_RPC_URL ?? 'https://test.rpc.fastnear.com',
     contract: env.HEARTH_CONTRACT ?? 'hearth.testnet',
     npcKeys: Object.fromEntries(NPCS.map((id) => [id, env[`NPC_KEY_${id.toUpperCase()}`] ?? ''])) as Record<NpcId, string>,
     oracleAccount: env.ORACLE_ACCOUNT ?? '',

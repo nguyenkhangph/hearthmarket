@@ -96,6 +96,8 @@ What is mirrored on chain today: raw production and NPC-to-NPC deals (`produce`,
 
 | Message | Fix |
 | --- | --- |
+| `-429 ... ENDPOINT IS DEPRECATED` | `rpc.testnet.near.org` is rate-limited/deprecated. Set `NEAR_RPC_URL=https://test.rpc.fastnear.com` in `.env` and restart the server |
+| `cargo near deploy` fails with `LNK2019 unresolved external symbol` | Windows ABI step. Run `cargo near build non-reproducible-wasm --no-abi`, then `near contract deploy <account> use-file target\near\hearth.wasm with-init-call new json-args ...` |
 | `does not exist on testnet` | Step 2 not done, or a typo in `HEARTH_CONTRACT` |
 | `has no initialised hearth contract` | Step 3 without the init call. Redeploy with init, or call `new` once from `near` → `contract` → `call-function` |
 | `NotEnoughBalance` | Top up the account from the faucet: `near` → `account` → `create-account` is per account; for an existing one use https://near-faucet.io |

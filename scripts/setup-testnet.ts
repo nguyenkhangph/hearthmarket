@@ -31,7 +31,7 @@ const dry = process.argv.includes('--dry-run');
 
 const contract = process.env.HEARTH_CONTRACT ?? '';
 const ownerKey = (process.env.OWNER_PRIVATE_KEY ?? '') as KeyPairString;
-const rpcUrl = process.env.NEAR_RPC_URL || 'https://rpc.testnet.near.org';
+const rpcUrl = process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com';
 
 if (!contract || contract === 'hearth.testnet') fail('Set HEARTH_CONTRACT in .env to your deployed contract account (e.g. hearthmarket-khang.testnet).');
 if (!ownerKey.startsWith('ed25519:')) fail('Set OWNER_PRIVATE_KEY=ed25519:... in .env (full-access key of the contract account).');
