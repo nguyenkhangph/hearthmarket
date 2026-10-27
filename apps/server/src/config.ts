@@ -30,14 +30,15 @@ export const config = {
   chain: (env.CHAIN || 'mock') as 'mock' | 'near',
   near: {
     network: env.NEAR_NETWORK || 'testnet',
-    rpcUrl: env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com',
+    /** one or more endpoints, comma-separated; a rate-limited call moves on to the next */
+    rpcUrl: env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs',
     contract: env.HEARTH_CONTRACT || 'hearth.testnet',
     npcKeys: Object.fromEntries(NPCS.map((id) => [id, env[`NPC_KEY_${id.toUpperCase()}`] ?? ''])) as Record<NpcId, string>,
     oracleAccount: env.ORACLE_ACCOUNT ?? '',
     oracleKey: env.ORACLE_KEY ?? '',
     /** real seconds between two on-chain day starts (reconcile + world post) */
     daySeconds: num(env.CHAIN_DAY_SECONDS, 50),
-    maxTxPerMinute: num(env.CHAIN_MAX_TX_PER_MINUTE, 90),
+    maxTxPerMinute: num(env.CHAIN_MAX_TX_PER_MINUTE, 40),
   },
 
   auth: {

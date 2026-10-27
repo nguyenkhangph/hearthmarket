@@ -38,7 +38,8 @@ const dry = process.argv.includes('--dry-run');
 
 const contract = process.env.HEARTH_CONTRACT ?? '';
 const ownerKey = (process.env.OWNER_PRIVATE_KEY ?? '') as KeyPairString;
-const rpcUrl = process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com';
+const rpcList = process.env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs';
+const rpcUrl = rpcList.split(',')[0].trim();
 
 if (!contract || contract === 'hearth.testnet') fail('Set HEARTH_CONTRACT in .env to your deployed contract account (e.g. hearthmarket.testnet).');
 if (!ownerKey.startsWith('ed25519:')) fail('Set OWNER_PRIVATE_KEY=ed25519:... in .env (full-access key of the contract account).');
@@ -50,7 +51,7 @@ const ownerPub = (await KeyPairSigner.fromSecretKey(ownerKey).getPublicKey()).to
 
 const RAW: Partial<Record<NpcId, string[]>> = { mike: ['ore'], jack: ['timber'], buba: ['wheat'] };
 const CRAFTS: Partial<Record<NpcId, string[]>> = { chloe: ['bread'], theo: ['tools', 'sword'] };
-const env: Record<string, string> = { CHAIN: 'near', HEARTH_CONTRACT: contract, NEAR_RPC_URL: rpcUrl, VITE_HEARTH_CONTRACT: contract };
+const env: Record<string, string> = { CHAIN: 'near', HEARTH_CONTRACT: contract, NEAR_RPC_URL: rpcList, VITE_HEARTH_CONTRACT: contract };
 const NEAR = (x: `${number}`) => BigInt(parseNearAmount(x)!);
 
 function fail(msg: string): never {

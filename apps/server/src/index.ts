@@ -13,7 +13,7 @@ import { NpcBrain } from './brain/brain.ts';
 import { DayPlanner } from './brain/planner.ts';
 import { OpenAiCompatible, WithFallback } from './brain/llm.ts';
 import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
-import { NearChain } from './chain/near.ts';
+import { NearChain, parseRpcUrls } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
 import { authenticate, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
@@ -90,7 +90,9 @@ if (config.chain === 'near') {
   const operator = config.near.oracleKey ? config.near.oracleAccount || config.near.contract : '';
   if (operator) keys[operator] = config.near.oracleKey;
   else log('no ORACLE_KEY: no day sync, world posts or player relays. Run `npm run setup:testnet`.');
-  chain = new NearChain(config.near.rpcUrl, keys);
+  const rpcUrls = parseRpcUrls(config.near.rpcUrl);
+  chain = new NearChain(rpcUrls, keys);
+  log(`rpc: ${rpcUrls.join(' , ')}`);
   mirror = new ChainMirror(chain, {
     contract: config.near.contract,
     operator,
@@ -118,7 +120,7 @@ const http = createServer((req, res) => {
   if (req.url === '/api/health') {
     res.end(JSON.stringify({
       ok: true, day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
-      chainStats: mirror?.stats, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
+      chainStats: mirror?.stats, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
     }));
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));
