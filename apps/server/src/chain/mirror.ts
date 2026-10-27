@@ -49,7 +49,7 @@ interface Call {
 }
 
 const RAW = new Set(['ore', 'timber', 'wheat']);
-const TGAS: Record<string, number> = { reconcile: 200, post_world_data: 30, relay_place_order: 30 };
+const TGAS: Record<string, number> = { reconcile: 150, post_world_data: 30, relay_place_order: 30 };
 const DEFAULT_TGAS = 20;
 
 export class ChainMirror {

@@ -29,7 +29,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Account, JsonRpcProvider, KeyPairEd25519, KeyPairSigner, parseNearAmount, type KeyPairString } from 'near-api-js';
+import { Account, JsonRpcProvider, KeyPairEd25519, KeyPairSigner, PublicKey, actions, parseNearAmount, type KeyPairString } from 'near-api-js';
 import { NPCS, NPC_DEFS, NPC_KEY_METHODS, OPERATOR_METHODS, RULES, g, setContractAccount, type NpcId } from '../packages/economy/src/index.ts';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -97,8 +97,13 @@ async function replaceKeys(acc: Account, label: string, methods: readonly string
   const old = await functionCallKeys(acc).catch(() => [] as string[]);
   for (const pk of old) await step(`${label}: delete old function-call key ${pk.slice(0, 16)}…`, () => acc.deleteKey(pk));
   const kp = KeyPairEd25519.fromRandom();
+  // no allowance (null): Account.addFunctionCallAccessKey would default to 0.25 NEAR, which the
+  // operator's 150 Tgas reconcile uses up within minutes. The account balance is the real cap.
   await step(`${label}: add function-call key → ${contract} [${methods.join(', ')}]`, () =>
-    acc.addFunctionCallAccessKey({ publicKey: kp.getPublicKey().toString(), contractId: contract, methodNames: [...methods] }),
+    acc.signAndSendTransaction({
+      receiverId: acc.accountId,
+      actions: [actions.addFunctionCallAccessKey(PublicKey.from(kp.getPublicKey().toString()), contract, [...methods], undefined)],
+    }),
   );
   return dry ? undefined : kp.toString();
 }

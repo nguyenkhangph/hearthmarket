@@ -108,6 +108,8 @@ const game = new Game(
   { seed: config.seed, world, mirror, worldPost: currentWorldPost, onNewDay: (v) => planner?.onNewDay(v) },
   brain, signer, chain,
 );
+// sync the chain to the engine right away, not only at the next game day
+mirror?.startDay(game.village, currentWorldPost());
 log(`world=${config.worldSource} brain=${brain.name} chain=${chain.kind} contract=${config.near.contract} login=${google ? 'google' : ''}${config.auth.devLogin ? (google ? '+dev' : 'dev') : ''}`);
 
 // ---------------------------------------------------------------- transport
