@@ -1,5 +1,5 @@
 import {
-  fmt, g, NEAR_CONFIG, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_ALLOWED_METHODS, QUESTS, RULES, marketView, midPrice, fee,
+  fmt, g, NEAR_CONFIG, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind,
   type Action, type ItemId, type NpcId, type Village, type FeedEvent, type MarketRow,
 } from '@hearth/economy';
 import { icon } from './assets.ts';
@@ -13,6 +13,7 @@ const hh = (t: number) => `${String(t % 24).padStart(2, '0')}:00`;
 const pct = (x: number, digits = 0) => `${x >= 0 ? '+' : ''}${(x * 100).toFixed(digits)}%`;
 
 const NPC_NAMES = NPCS.map((id) => NPC_DEFS[id].name);
+const EXPLORER = 'https://testnet.nearblocks.io';
 
 export class Ui {
   private panel: PanelId = null;
@@ -84,7 +85,10 @@ export class Ui {
     const gl = me?.guild ? v.s.guilds[me.guild] : null;
     const rank = gl ? v.ranking().findIndex((r) => r.guild === gl.id) + 1 : 0;
     $('#guild-chip').textContent = gl ? `Guild: ${gl.name} #${rank}` : 'No guild yet';
-    $('#account').textContent = this.src.mode === 'guest' ? `${me?.name ?? 'guest'} · guest` : me?.name ?? '';
+    const acct = this.src.account;
+    $('#account').innerHTML = this.src.mode === 'guest'
+      ? `${esc(me?.name ?? 'guest')} · guest`
+      : `${esc(me?.name ?? '')}${acct && this.src.chain === 'near' ? ` · <a class="tx" target="_blank" rel="noopener" title="Your NEAR account (testnet)" href="${EXPLORER}/address/${esc(acct)}">${esc(acct.slice(0, 6))}…${esc(acct.slice(-4))}</a>` : ''}`;
   }
 
   private renderWorld() {
@@ -111,10 +115,21 @@ export class Ui {
     return t;
   }
 
+  /** Real testnet hashes link to the explorer. */
+  private txLink(tx: string) {
+    return this.src.chain === 'near' && txKind(tx) === 'chain'
+      ? `<a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(tx)}">${esc(short(tx))}</a>`
+      : esc(short(tx));
+  }
+
   private renderFeed() {
     const feed = this.v.s.feed.slice(-40).reverse();
     $('#feed-list').innerHTML = feed
-      .map((e) => `<li class="k-${e.kind}"><time>${hh(e.t)}</time><span>${this.highlight(e.text)}</span></li>`)
+      .map((e) => {
+        let html = this.highlight(e.text);
+        if (e.tx) html = html.replace(esc(short(e.tx)), this.txLink(e.tx));
+        return `<li class="k-${e.kind}"><time>${hh(e.t)}</time><span>${html}</span></li>`;
+      })
       .join('');
   }
 
@@ -123,10 +138,11 @@ export class Ui {
     if (!me) return;
     const done = QUESTS.filter((q) => me.quests[q.id]).length;
     const el = $('#quests');
-    el.classList.toggle('hidden', done === QUESTS.length && this.v.s.tick % 24 > 0 && this.lastDay > 0);
+    el.classList.toggle('hidden', done === QUESTS.length && !me.badges?.length && this.v.s.tick % 24 > 0 && this.lastDay > 0);
     el.innerHTML = `<h4>First steps · ${done}/${QUESTS.length}</h4>` +
       QUESTS.map((q) => `<div class="q ${me.quests[q.id] ? 'done' : ''}">${me.quests[q.id] ? '✓' : '○'} ${esc(q.text)}</div>`).join('') +
-      `<div class="muted small">+${fmt(RULES.questReward, 0)} gold each</div>`;
+      `<div class="muted small">+${fmt(RULES.questReward, 0)} gold each</div>` +
+      (me.badges?.length ? `<div class="badges">${me.badges.map((b) => `<span class="badge" title="Soulbound badge${b.tx ? ' · NEP-171 on NEAR testnet' : ''}">★ ${esc(b.title)}${b.tx && txKind(b.tx) === 'chain' ? ` · ${this.txLink(b.tx)}` : ''}</span>`).join('')}</div>` : '');
   }
 
   private onFeed(e: FeedEvent) {
@@ -348,7 +364,7 @@ export class Ui {
     <div class="kvrow"><span>Spent today</span><span><b class="gold">${fmt(n.spentToday, 0)}</b> / ${fmt(def.dailyBudget, 0)} gold</span></div>
     <div class="bar"><span style="width:${spentPct}%"></span></div>
     <div class="kvrow"><span>Key can call</span><span class="mono">${esc(NEAR_CONFIG.contract)}</span></div>
-    <div class="kvrow"><span>Methods</span><span class="mono small">${NPC_ALLOWED_METHODS.join(', ')}</span></div>
+    <div class="kvrow"><span>Methods</span><span class="mono small">${NPC_KEY_METHODS[id].join(', ')}</span></div>
     <div class="kvrow"><span>Transfer out</span><b class="down">Not allowed</b></div>
     <h3>Memory</h3>
     ${n.memory.length ? n.memory.map((m) => `<div class="mem">· ${esc(m)}</div>`).join('') : '<div class="muted small">nothing yet</div>'}
@@ -365,7 +381,7 @@ export class Ui {
 Goal:  ${esc(d.goal)}
 Saw:   ${esc(d.saw)}
 Think: ${esc(d.think)}
-Act:   ${esc(d.act)}${d.tx ? `  → tx ${esc(d.tx.slice(0, 4))}…${esc(d.tx.slice(-2))}` : ''}
+Act:   ${esc(d.act)}${d.tx ? `  → tx ${this.txLink(d.tx)}` : ''}
 Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decisions yet today.</div>'}
   </section>
 </div>`;

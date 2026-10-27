@@ -53,6 +53,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
 .login-card p { color: #cfd0d6; }
 .big-btn { width: 100%; padding: 12px; font-size: 16px; margin: 10px 0; }
 #email-form { display: flex; gap: 8px; }
+#google-btn { margin: 12px 0; min-height: 44px; }
+#login-msg.bad { color: #ff8a7a; }
+a.tx { color: inherit; text-decoration: underline dotted; }
+.badges { margin-top: 8px; }
+.badge { display: inline-block; padding: 2px 8px; margin: 2px 4px 0 0; border-radius: 999px; background: #3a2a14; color: #ffcf7a; font-size: 12px; }
 #email-form input { flex: 1; }
 
 /* layout */

@@ -7,7 +7,9 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "start": "tsx --env-file-if-exists=../../.env src/index.ts",
     "world:record": "tsx --env-file-if-exists=../../.env src/world/record.ts",
-    "normals": "tsx src/world/normals.ts"
+    "normals": "tsx src/world/normals.ts",
+    "world:check": "tsx src/world/check.ts",
+    "llm:check": "tsx --env-file-if-exists=../../.env src/brain/check.ts"
   },
   "dependencies": {
     "@hearth/economy": "0.1.0",

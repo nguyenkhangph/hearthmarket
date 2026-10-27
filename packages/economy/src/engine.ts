@@ -8,6 +8,7 @@ import {
   askPrice, bidPrice, emptyInventory, fee, initialMarketStock, midPrice, priceIndex, quoteBuy, quoteSell,
 } from './market.ts';
 import { checkNpcAction } from './policy.ts';
+import { checkPlan, describePlan, type NpcPlan } from './plan.ts';
 import { applyWorldDay, initialWorld, SyntheticWorld, type WorldDay } from './world.ts';
 import type {
   Action, ActionResult, Actor, DailyStats, DiaryEntry, FeedEvent, FeedKind, Guild, Inventory, NpcState,
@@ -30,8 +31,15 @@ export interface VillageOptions {
   botPlayers?: number;
 }
 
-/** Hook so the server can mirror accepted actions on chain. Returns a tx hash. */
-export type ChainHook = (signer: string, method: string, args: Record<string, unknown>) => string | undefined;
+/**
+ * Hook so the server can mirror accepted actions on chain. Returns a placeholder hash that
+ * the server patches with the real one, or null when the action stays off chain (shown as
+ * "off-chain" in the feed).
+ */
+export type ChainHook = (signer: string, method: string, args: Record<string, unknown>) => string | null;
+
+/** A badge the village awards to a human player (minted on chain as a soulbound NEP-171 token when online). */
+export type BadgeHook = (playerId: string, badge: { kind: string; title: string; description: string; season: number }) => string | null;
 
 const FEED_CAP = 250;
 const DIARY_CAP = 200;
@@ -50,6 +58,7 @@ export class Village {
   private rng: Rng;
   private world: WorldSource;
   chainHook?: ChainHook;
+  badgeHook?: BadgeHook;
   private listeners: ((e: FeedEvent) => void)[] = [];
   private aiTick?: (v: Village) => void;
 
@@ -143,9 +152,16 @@ export class Village {
     if (this.s.diary.length > DIARY_CAP) this.s.diary.splice(0, this.s.diary.length - DIARY_CAP);
   }
 
+  /**
+   * Record a transaction. Without a chain hook (guest mode, tests, simulation) the hash is a
+   * simulated one marked `sim…`; with a hook, actions the server keeps off chain are marked `local…`.
+   */
   private tx(signer: string, method: string, args: Record<string, unknown>, ok = true, reason?: string): string {
-    let hash = ok ? this.chainHook?.(signer, method, args) : undefined;
-    if (!hash) hash = this.fakeHash();
+    let hash: string | null | undefined = ok ? this.chainHook?.(signer, method, args) : undefined;
+    if (!hash) {
+      const fake = this.fakeHash();
+      hash = (this.chainHook && ok ? 'local' : 'sim') + fake.slice(this.chainHook && ok ? 5 : 3);
+    }
     this.s.txs.push({ hash, t: this.s.tick, signer, method, args, ok, reason });
     if (this.s.txs.length > TX_CAP) this.s.txs.splice(0, this.s.txs.length - TX_CAP);
     return hash;
@@ -202,6 +218,8 @@ export class Village {
       n.spentToday = 0;
       n.inflowToday = 0;
       n.goldAtDayStart = n.gold;
+      // a plan lasts the day it was made for and the next one (the brain is rate-limited)
+      if (n.plan && day - n.plan.day > 1) n.plan = undefined;
     }
     // World bulletin: the most unusual region of the day
     const top = [...this.s.world.regions].sort((a, b) => b.severity - a.severity)[0];
@@ -371,7 +389,7 @@ export class Village {
   private craftPlan(n: NpcState): Partial<Record<ItemId, number>> {
     const plan: Partial<Record<ItemId, number>> = {};
     if (n.id === 'chloe') {
-      const want = this.s.market.stock.bread < ITEM_DEFS.bread.target * 1.4 ? RULES.bakeMax : 3;
+      const want = n.plan?.bake ?? (this.s.market.stock.bread < ITEM_DEFS.bread.target * 1.4 ? RULES.bakeMax : 3);
       plan.bread = want + Math.max(0, this.reservedFor('chloe', 'bread') - n.stock.bread);
     }
     if (n.id === 'theo') {
@@ -381,7 +399,8 @@ export class Village {
         const k = Math.min(slots, Math.ceil(need / (RECIPE_YIELD[item] ?? 1)));
         if (k > 0) { plan[item] = k; slots -= k; }
       }
-      for (const item of ['tools', 'sword'] as ItemId[]) {
+      const order: ItemId[] = n.plan?.focus === 'sword' ? ['sword', 'tools'] : ['tools', 'sword'];
+      for (const item of order) {
         if (slots <= 0) break;
         const st = this.s.market.stock[item];
         const inputCost = this.unitInputCost(item);
@@ -521,7 +540,7 @@ export class Village {
           }
           if (made > 0) {
             const units = made * (RECIPE_YIELD[item] ?? 1);
-            this.tx(def.account, 'produce', { item, qty: units });
+            this.tx(def.account, 'craft', { item, crafts: made });
             if (item !== 'bread') this.feed('craft', `${def.name} forged ${units} ${item}`, id);
           }
         }
@@ -576,9 +595,10 @@ export class Village {
         }
         if (item === 'bread') keep += 3;
         if (item === 'tools' || item === 'sword') keep += 0;
-        const qty = n.stock[item] - keep;
+        const surplus = n.stock[item] - keep;
+        const qty = n.plan?.sellShare !== undefined ? Math.floor(surplus * n.plan.sellShare) : surplus;
         if (qty > 0) {
-          const floor = Math.round(midPrice(item, this.s.market.stock[item] + qty) * 0.6);
+          const floor = Math.round(midPrice(item, this.s.market.stock[item] + qty) * ((n.plan?.floorPct ?? 60) / 100));
           this.npcSell(n, item, qty, floor);
         }
       }
@@ -596,7 +616,7 @@ export class Village {
       const world = this.s.world.price[item]!;
       const landed = Math.round(world * (1 + ship / 10_000));
       const exportRev = Math.round(world * (1 - ship / 10_000));
-      const band = 1 + RULES.brunoBandBps / 10_000;
+      const band = 1 + (b.plan?.bandBps ?? RULES.brunoBandBps) / 10_000;
       // import
       let imported = 0;
       while (imported < RULES.brunoDailyCap) {
@@ -617,7 +637,7 @@ export class Village {
         imported++;
       }
       if (imported > 0) {
-        const tx = this.tx(NPC_DEFS.bruno.account, 'world_trade', { item, qty: imported, side: 'import' });
+        const tx = this.tx(NPC_DEFS.bruno.account, 'world_trade', { item, qty: imported, side: 'import', market_price: bidPrice(item, this.s.market.stock[item]) });
         this.feed('import', `Bruno imports ${imported} ${item} from the world market · tx ${short(tx)}`, 'bruno', tx);
       }
       // export
@@ -640,7 +660,7 @@ export class Village {
         exported++;
       }
       if (exported > 0) {
-        const tx = this.tx(NPC_DEFS.bruno.account, 'world_trade', { item, qty: exported, side: 'export' });
+        const tx = this.tx(NPC_DEFS.bruno.account, 'world_trade', { item, qty: exported, side: 'export', market_price: askPrice(item, this.s.market.stock[item] + exported) });
         this.feed('export', `Bruno exports ${exported} ${item} to the world market · tx ${short(tx)}`, 'bruno', tx);
       }
     }
@@ -802,6 +822,13 @@ export class Village {
     const paid = result.reduce((s, r) => s + r.reward, 0);
     this.s.seasonPool = pool - paid;
     this.s.lastSeasonResult = { season: this.s.season, ranking: result };
+    result.slice(0, 3).forEach((r, i) => {
+      const gl = this.s.guilds[r.guild];
+      for (const m of gl.members) {
+        const p = this.s.players[m];
+        if (p) this.award(p, { kind: 'season', title: `Season ${this.s.season} · #${i + 1} · ${gl.name}`, description: `Top ${i + 1} guild of Hearthmarket season ${this.s.season}` });
+      }
+    });
     const tx = this.tx(contract(), 'close_season', { season: this.s.season });
     this.feed('season', `Season ${this.s.season} closed · ${fmt(paid, 0)} gold paid to the top ${result.length} guilds · tx ${short(tx)}`, undefined, tx);
     for (const gl of Object.values(this.s.guilds)) gl.contributed = Math.max(1, this.guildValue(gl));
@@ -866,6 +893,31 @@ export class Village {
     p.gold += RULES.questReward;
     this.s.ledger.faucets.quests += RULES.questReward;
     if (!p.bot) this.feed('quest', `${p.name} completed "${QUESTS.find((x) => x.id === q)!.text}" · +${fmt(RULES.questReward, 0)} gold`);
+    if (!p.bot && QUESTS.every((x) => p.quests[x.id])) {
+      this.award(p, { kind: 'quest', title: 'First steps', description: 'Finished the four starter quests in Hearthmarket' });
+    }
+  }
+
+  /** Give a human player a badge; the server mints it on chain through the badge hook. */
+  private award(p: Player, b: { kind: string; title: string; description: string }) {
+    if (p.bot) return;
+    const tx = this.badgeHook?.(p.id, { ...b, season: this.s.season }) ?? undefined;
+    (p.badges ??= []).push({ kind: b.kind, title: b.title, season: this.s.season, day: this.day, tx });
+    this.feed('quest', `${p.name} earned the badge "${b.title}"${tx ? ` · tx ${short(tx)}` : ''}`, undefined, tx);
+  }
+
+  /** Server: patch a badge's placeholder hash once the mint lands. */
+  patchTx(placeholder: string, hash: string) {
+    const s = this.s;
+    for (const t of s.txs) if (t.hash === placeholder) t.hash = hash;
+    for (const f of s.feed) {
+      if (f.tx === placeholder) {
+        f.tx = hash;
+        f.text = f.text.replace(short(placeholder), short(hash));
+      }
+    }
+    for (const d of s.diary) if (d.tx === placeholder) d.tx = hash;
+    for (const p of Object.values(s.players)) for (const b of p.badges ?? []) if (b.tx === placeholder) b.tx = hash;
   }
 
   private tallyVotes() {
@@ -904,7 +956,7 @@ export class Village {
     const p = this.s.players[playerId];
     if (!p) return { ok: false, reason: 'unknown player' };
     p.lastActiveDay = this.day;
-    const signer = `${playerId}.players.testnet`;
+    const signer = playerSigner(playerId);
 
     const guildOf = (): Guild | undefined => (p.guild ? this.s.guilds[p.guild] : undefined);
     const payerIsGuild = actor.kind === 'guild' || ('fromGuild' in a && a.fromGuild);
@@ -932,7 +984,7 @@ export class Village {
         this.takeFee(f);
         this.s.ledger.volume += q.total;
         this.deliver(pay.who, a.item, a.qty, Math.round(q.total / a.qty));
-        const tx = this.tx(signer, 'market_buy', { item: a.item, qty: a.qty, max_price: a.maxPrice });
+        const tx = this.tx(signer, 'market_buy', { item: a.item, qty: a.qty, max_price: a.maxPrice, ...(pay.who.kind === 'guild' ? { guild: pay.who.id } : {}) });
         if (a.item === 'wheat' && pay.who.kind === 'player' && p.stock.wheat >= 3) this.completeQuest(p, 'buy-wheat');
         return { ok: true, tx, info: `bought ${a.qty} ${a.item} for ${fmt(q.total + f)}` };
       }
@@ -950,7 +1002,7 @@ export class Village {
         else holder.gold += q.total - f;
         this.takeFee(f);
         this.s.ledger.volume += q.total;
-        const tx = this.tx(signer, 'market_sell', { item: a.item, qty: a.qty, min_price: a.minPrice });
+        const tx = this.tx(signer, 'market_sell', { item: a.item, qty: a.qty, min_price: a.minPrice, ...('fund' in holder ? { guild: holder.id } : {}) });
         return { ok: true, tx, info: `sold ${a.qty} ${a.item} for ${fmt(q.total - f)}` };
       }
       case 'place_order': {
@@ -966,7 +1018,10 @@ export class Village {
           escrow, deadlineDay: this.day + a.deadlineDays, status: 'open',
         };
         this.s.orders.push(o);
-        const tx = this.tx(signer, 'place_order', { item: a.item, qty: a.qty, max_price: a.maxPrice, deadline_day: o.deadlineDay });
+        const tx = this.tx(signer, 'place_order', {
+          order_id: o.id, item: a.item, qty: a.qty, max_price: a.maxPrice, deadline_day: o.deadlineDay, deadline_days: a.deadlineDays,
+          ...(pay.who.kind === 'guild' ? { guild: pay.who.id } : {}),
+        });
         const seller = NPC_DEFS[this.producerOf(a.item)!].name;
         this.feed('order', `${this.ownerName(pay.who)} ordered ${a.qty} ${a.item} from ${seller} · max ${fmt(a.maxPrice)} each`, this.producerOf(a.item), tx);
         if (a.item === 'sword' && pay.who.kind === 'player') this.completeQuest(p, 'order-sword');
@@ -979,7 +1034,7 @@ export class Village {
         if (!owner) return { ok: false, reason: 'not your order' };
         o.status = 'cancelled';
         this.refundEscrow(o);
-        return { ok: true, tx: this.tx(signer, 'cancel_order', { order_id: o.id }) };
+        return { ok: true, tx: this.tx(signer, 'cancel_order', { order_id: o.id, ...(o.by.kind === 'guild' ? { guild: o.by.id } : {}) }) };
       }
       case 'invest': {
         if (a.amount < g(1)) return { ok: false, reason: 'minimum investment is 1 gold' };
@@ -1089,6 +1144,24 @@ export class Village {
     }
   }
 
+  /**
+   * A day plan from the NPC brain. The plan guard keeps only this NPC's dials and clamps
+   * them; the result is written to the diary. Plans tune thresholds, they never move gold.
+   */
+  setPlan(id: NpcId, proposal: Record<string, unknown>, by: string, why = '', saw = ''): NpcPlan {
+    const { plan, notes } = checkPlan(id, proposal, this.day, by, why);
+    this.s.npcs[id].plan = plan;
+    this.diary({
+      npc: id,
+      goal: `plan day ${this.day}`,
+      saw: saw || `village and world prices at ${String(this.hour).padStart(2, '0')}:00`,
+      think: plan.why || '(no reason given)',
+      act: `plan: ${describePlan(plan)}`,
+      guard: notes.length ? `plan guard: ${notes.join('; ')}` : 'plan guard: all dials in range · plans never move gold',
+    });
+    return plan;
+  }
+
   /** Action proposed by an NPC brain (LLM). Guard first, then a narrow set of effects. */
   npcAct(id: NpcId, a: Action): ActionResult {
     const n = this.s.npcs[id];
@@ -1142,7 +1215,29 @@ export class Village {
   }
 }
 
-export const short = (tx: string) => `${tx.slice(0, 4)}…${tx.slice(-2)}`;
+/** Engine signer string for a player; the server maps it to the player's NEAR account. */
+export const PLAYER_SIGNER_SUFFIX = '.players.hearth';
+export const playerSigner = (playerId: string) => `${playerId}${PLAYER_SIGNER_SUFFIX}`;
+
+/** Kind of a tx hash as recorded by the engine. */
+export function txKind(tx: string): 'chain' | 'pending' | 'failed' | 'local' | 'sim' {
+  if (tx.startsWith('pending')) return 'pending';
+  if (tx.startsWith('failed:')) return 'failed';
+  if (tx.startsWith('local')) return 'local';
+  if (tx.startsWith('sim')) return 'sim';
+  return 'chain';
+}
+
+/** Short label for a tx hash in the feed: `5irr…1Q`, `pending…`, `failed`, `off-chain`, `sim`. */
+export function short(tx: string): string {
+  switch (txKind(tx)) {
+    case 'pending': return 'pending…';
+    case 'failed': return 'failed';
+    case 'local': return 'off-chain';
+    case 'sim': return 'sim';
+    default: return `${tx.slice(0, 4)}…${tx.slice(-2)}`;
+  }
+}
 
 export function marketView(v: Village) {
   const st = v.s.market.stock;

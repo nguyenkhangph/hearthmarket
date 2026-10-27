@@ -24,3 +24,5 @@ contracts/**/target/
 
 # Submission payload contains personal data
 submission.json
+# full Open-Meteo payloads whose hashes the oracle posted
+data/world/posted/

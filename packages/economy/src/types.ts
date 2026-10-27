@@ -1,4 +1,5 @@
 import type { ItemId, NpcId, QuestId, GuildStrategy } from './defs.ts';
+import type { NpcPlan } from './plan.ts';
 import type { Gold } from './money.ts';
 
 export type Inventory = Record<ItemId, number>;
@@ -23,6 +24,8 @@ export interface NpcState {
   inflowToday: Gold; // investment money received today, excluded from profit
   brokeDays: number;
   memory: string[]; // short facts the brain keeps
+  /** today's plan from the NPC brain (LLM), already checked by the plan guard */
+  plan?: NpcPlan;
   x: number; // tile position for the client
   y: number;
 }
@@ -91,6 +94,8 @@ export interface Player {
   bot: boolean;
   daysActive: number;
   lastActiveDay: number;
+  /** soulbound badges (NEP-171 on chain when the server mirrors them) */
+  badges?: { kind: string; title: string; season: number; day: number; tx?: string }[];
 }
 
 export interface RegionState {

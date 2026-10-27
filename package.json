@@ -19,7 +19,9 @@
     "typecheck": "tsc -p packages/economy && tsc -p apps/server && tsc -p apps/client && tsc -p scripts",
     "contract:test": "cd contracts/hearth && cargo test",
     "contract:build": "cd contracts/hearth && cargo near build non-reproducible-wasm",
-    "setup:testnet": "tsx --env-file-if-exists=.env scripts/setup-testnet.ts"
+    "setup:testnet": "tsx --env-file-if-exists=.env scripts/setup-testnet.ts",
+    "world:check": "npm run world:check -w @hearth/server",
+    "llm:check": "npm run llm:check -w @hearth/server"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

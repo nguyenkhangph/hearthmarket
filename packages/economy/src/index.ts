@@ -4,6 +4,7 @@ export * from './rng.ts';
 export * from './types.ts';
 export * from './market.ts';
 export * from './policy.ts';
+export * from './plan.ts';
 export * from './world.ts';
 export * from './engine.ts';
 export * from './ai.ts';

@@ -18,14 +18,14 @@ export class NearChain implements ChainAdapter {
     }
   }
 
-  async call(signer: string, contract: string, method: string, args: Record<string, unknown>): Promise<string> {
+  async call(signer: string, contract: string, method: string, args: Record<string, unknown>, tgas = 20): Promise<string> {
     const account = this.accounts.get(signer);
     if (!account) throw new Error(`no key configured for ${signer}`);
     const res = await account.callFunctionRaw({
       contractId: contract,
       methodName: method,
       args,
-      gas: 30_000_000_000_000n, // 30 Tgas
+      gas: BigInt(tgas) * 1_000_000_000_000n,
       deposit: 0n,
     });
     const r = res as unknown as { transaction?: { hash?: string }; transaction_outcome?: { id?: string } };
