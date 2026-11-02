@@ -113,7 +113,12 @@ export class ChainMirror {
       this.stats.budgeted++;
       return null;
     }
-    return this.enqueue(calls);
+    // goods produced earlier today must be on chain before the NPC sells or hands them over:
+    // send this NPC's batch (and the seller's, for a hire) first, and wait for it
+    const deps = npc && this.opts.batchProduce
+      ? this.flushProduce([signer, ...(method === 'hire' && args.seller ? [String(args.seller)] : [])])
+      : [];
+    return this.enqueue(calls, false, deps);
   };
 
   // ------------------------------------------------------------------ gas budget
@@ -154,22 +159,25 @@ export class ChainMirror {
     return ph;
   }
 
-  /** Sends the production collected since the last call: one `produce` per NPC and item (capped at the contract's 12). */
-  flushProduce(): number {
-    let sent = 0;
-    for (const [signer, items] of this.produceBatch) {
+  /**
+   * Sends the production collected so far: one `produce` per NPC and item (capped at the
+   * contract's 12 per call). All NPCs, or only `signers`. Returns the queue tails of the
+   * NPCs that had something to send, for calls that must wait for those goods.
+   */
+  flushProduce(signers?: string[]): Promise<unknown>[] {
+    const waits: Promise<unknown>[] = [];
+    for (const [signer, items] of [...this.produceBatch]) {
+      if (signers && !signers.includes(signer)) continue;
       for (const [item, { qty, placeholders }] of items) {
-        const ph = this.enqueue([{ signer, method: 'produce', args: { item, qty: Math.min(qty, 12) }, tgas: DEFAULT_TGAS }]);
-        if (ph) {
-          this.aliases.set(ph, placeholders);
-          sent++;
-        } else {
-          for (const p of placeholders) this.onSettled(p, 'local-not-sent');
-        }
+        const ph = this.enqueue([{ signer, method: 'produce', args: { item, qty: Math.min(qty, 12) }, tgas: DEFAULT_TGAS }], true);
+        if (ph) this.aliases.set(ph, placeholders);
+        else for (const p of placeholders) this.onSettled(p, 'local-not-sent');
       }
+      this.produceBatch.delete(signer);
+      const q = this.queues.get(signer);
+      if (q) waits.push(q.tail);
     }
-    this.produceBatch.clear();
-    return sent;
+    return waits;
   }
 
   private settle(placeholder: string, hash: string) {
@@ -370,7 +378,7 @@ export class ChainMirror {
     return true;
   }
 
-  private enqueue(calls: Call[], force = false): string | null {
+  private enqueue(calls: Call[], force = false, after: Promise<unknown>[] = []): string | null {
     const signer = calls[0].signer;
     const q = this.queues.get(signer) ?? { tail: Promise.resolve(), size: 0 };
     const now = (this.opts.now ?? Date.now)();
@@ -383,6 +391,7 @@ export class ChainMirror {
     q.size++;
     this.queues.set(signer, q);
     const run = async () => {
+      if (after.length) await Promise.all(after.map((p) => p.catch(() => {})));
       let last = '';
       for (const c of calls) {
         this.stats.sent++;

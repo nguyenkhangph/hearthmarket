@@ -170,7 +170,7 @@ describe('chain mirror: gas budget', () => {
     const c = m.hook(NPC_DEFS.jack.account, 'produce', { item: 'timber', qty: 9 })!;
     expect(txKind(a)).toBe('pending');
     expect(chain.calls).toHaveLength(0);
-    expect(m.flushProduce()).toBe(2);
+    expect(m.flushProduce()).toHaveLength(2);
     await m.idle();
     expect(chain.calls.map((x) => [x.signer, x.method, x.args])).toEqual([
       [NPC_DEFS.mike.account, 'produce', { item: 'ore', qty: 9 }],
@@ -179,6 +179,29 @@ describe('chain mirror: gas budget', () => {
     expect(settled.get(a)).toBe(settled.get(b));
     expect(txKind(settled.get(a)!)).toBe('chain');
     expect(txKind(settled.get(c)!)).toBe('chain');
+  });
+
+  it('puts the day\'s production on chain before the NPC sells it or a buyer hires it', async () => {
+    const { m, chain } = mirror({ batchProduce: true, maxPerMinute: 1000 });
+    // a slow chain for produce: without the wait, the hire on Theo's queue would land first
+    const call = chain.call.bind(chain);
+    chain.call = async (signer, contract, method, args) => {
+      if (method === 'produce') await new Promise((r) => setTimeout(r, 30));
+      return call(signer, contract, method, args);
+    };
+    m.hook(NPC_DEFS.jack.account, 'produce', { item: 'timber', qty: 6 });
+    m.hook(NPC_DEFS.mike.account, 'produce', { item: 'ore', qty: 5 });
+    m.hook(NPC_DEFS.jack.account, 'market_sell', { item: 'timber', qty: 4, min_price: 270 });
+    m.hook(NPC_DEFS.theo.account, 'hire', { seller: NPC_DEFS.mike.account, item: 'ore', qty: 3, price: 590 });
+    await m.idle();
+    const order = chain.calls.map((c) => `${c.signer.split('.')[0]}:${c.method}`);
+    expect(order.indexOf('jack:produce')).toBeLessThan(order.indexOf('jack:market_sell'));
+    expect(order.indexOf('mike:produce')).toBeLessThan(order.indexOf('theo:hire'));
+    expect(chain.calls.find((c) => c.method === 'produce' && c.signer === NPC_DEFS.mike.account)?.args).toEqual({ item: 'ore', qty: 5 });
+    // nothing is sent twice at the end of the day
+    m.flushProduce();
+    await m.idle();
+    expect(chain.calls.filter((c) => c.method === 'produce')).toHaveLength(2);
   });
 
   it('caps the batch at the contract\'s daily production cap', async () => {
