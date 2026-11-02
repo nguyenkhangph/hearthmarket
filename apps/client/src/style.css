@@ -194,3 +194,70 @@ button.linkish { background: none; border: none; box-shadow: none; padding: 0; c
 .steps { padding-left: 18px; }
 .steps li { margin: 4px 0; }
 a.btn { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text); }
+
+/* ------------------------------------------------------------------ cozy village theme
+   Warm wood and parchment around the pixel map: wooden frames on cards and panels,
+   pixel headings (Pixelify Sans), parchment name tags on the map, NPC faces in the feed. */
+:root {
+  --bg: #17120f;
+  --panel: #221a14;
+  --card: #2c221a;
+  --card-2: #3a2d22;
+  --line: #5b4330;
+  --wood: #6b4a2e;
+  --wood-hi: #9a6d42;
+  --wood-dark: #24170e;
+  --parchment: #f4e4c1;
+  --ink: #3a2717;
+  --text: #f3ead8;
+  --muted: #b5a48d;
+  --pixel: 'Pixelify Sans', var(--mono);
+}
+.card, .pcard, .panel, #quests, .login-card {
+  border: 2px solid var(--wood);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 2px var(--wood-dark), inset 0 3px 0 2px #ffffff0d, 0 3px 0 #0009;
+}
+.panel { background: #1d1611f2; }
+#side, #topbar { background: linear-gradient(180deg, #2a1f17, #221a14); }
+#topbar { border-bottom: 3px solid var(--wood); box-shadow: 0 2px 0 var(--wood-dark); }
+#side { border-left: 3px solid var(--wood); }
+.card h3, .pcard h3, #quests h4, .card h4 {
+  font-family: var(--pixel); font-weight: 600; letter-spacing: 0.06em; color: #f0c56b; text-transform: none; font-size: 15px;
+}
+.card h3::before, .pcard h3::before { content: '◆ '; color: var(--wood-hi); font-size: 11px; vertical-align: 2px; }
+.brand { font-family: var(--pixel); font-size: 16px; letter-spacing: 0.1em; font-weight: 700; text-shadow: 0 2px 0 #000; }
+.login-card h1 { font-family: var(--pixel); font-weight: 700; letter-spacing: 0; }
+button {
+  border: 2px solid var(--wood); border-radius: 5px; background: var(--card-2);
+  box-shadow: inset 0 2px 0 #ffffff14, 0 3px 0 var(--wood-dark); transition: transform 0.05s;
+}
+button:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 2px 0 #ffffff14, 0 1px 0 var(--wood-dark); }
+button.primary { background: linear-gradient(180deg, #ee7a3e, #d75d24); border-color: #8f3a14; box-shadow: inset 0 2px 0 #ffffff33, 0 3px 0 #5b230b; }
+button.danger { border-color: #6e1d17; box-shadow: inset 0 2px 0 #ffffff22, 0 3px 0 #3d0f0b; }
+#topbar nav button { font-family: var(--pixel); font-size: 14px; padding: 2px 10px; }
+#topbar nav button.active { background: var(--parchment); color: var(--ink); border-color: var(--wood-hi); }
+.chip { background: var(--card-2); border: 2px solid var(--wood); border-radius: 5px; }
+input, select { background: #150f0b; border: 2px solid var(--line); border-radius: 5px; }
+.map-label {
+  font: 600 12px var(--pixel); letter-spacing: 0.02em; background: var(--parchment); color: var(--ink);
+  border: 2px solid var(--wood); border-radius: 4px; box-shadow: 0 2px 0 #0007; padding: 0 6px;
+}
+.map-label.stall-label { background: #3a2d22ee; color: var(--parchment); font-size: 10px; padding: 0 4px; border-width: 1px; }
+.map-label.stall-label.owned { background: #f0c56b; color: var(--ink); }
+.bubble { background: #fffaf0; border-color: var(--ink); font-family: var(--sans); }
+.bubble-think { background: #eef4ff; border-color: #3d5a99; }
+img.face { width: 20px; height: 20px; image-rendering: pixelated; vertical-align: -5px; margin-right: 5px; border-radius: 4px; background: #00000033; }
+.npc-tabs button img.face { margin-right: 6px; }
+#feed-list li { border-bottom: 1px dashed #ffffff14; }
+#feed-list .k-think span { color: #b9cdf7; font-style: italic; }
+#feed-list .k-deal span { color: #f3ead8; }
+.overlay { background: radial-gradient(circle at 70% 30%, #3a2a1c, #120d09 70%); }
+#topbar { gap: 8px; padding: 6px 12px; }
+#topbar .chip { padding: 3px 8px; font-size: 12px; }
+#topbar nav { gap: 5px; margin-left: 4px; }
+#stage { background: #120d0a; }
+table.mkt td { white-space: nowrap; }
+table.mkt td button { padding: 1px 7px; font-size: 12px; box-shadow: inset 0 1px 0 #ffffff14, 0 2px 0 var(--wood-dark); }
+table.mkt td:last-child { text-align: right; }
+table.mkt .spark { width: 72px; }

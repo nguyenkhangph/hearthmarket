@@ -45,6 +45,7 @@ const SHEETS: Record<string, [string, number, number]> = {
   cloud: ['Weather effects/Clouds.png', 64, 64],
   wind: ['Weather effects/Wind_Anim.png', 16, 16],
   torch: ['Outdoor decoration/Outdoor_Decor_Animations/Other_Animations/Torch_Anim.png', 16, 32],
+  anvil: ['Buildings/House_Decor/Anvil_Anim.png', 16, 16],
   ...Object.fromEntries([1, 3, 5, 7, 9, 11, 13, 15].map((n) => [`flower${n}`, [`Outdoor decoration/Outdoor_Decor_Animations/Grass_Animations/Flower_Grass_${n}_Anim.png`, 16, 16] as [string, number, number]])),
   ...Object.fromEntries([1, 2, 3].map((n) => [`grass${n}`, [`Outdoor decoration/Outdoor_Decor_Animations/Grass_Animations/Grass_${n}_Anim.png`, 16, 16] as [string, number, number]])),
 };
@@ -91,6 +92,8 @@ export class VillageLife {
   private gloom!: Phaser.GameObjects.Rectangle;
   private windTimer = 0;
   private weather = { rain: false, wind: false, heat: false };
+  private anvil?: Phaser.GameObjects.Sprite;
+  private sparks?: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor(private scene: Phaser.Scene) {}
 
@@ -168,6 +171,13 @@ export class VillageLife {
     sc.add.image(t(25) + 8, t(14) + 6, 'life-bench', 1).setOrigin(0, 0).setDepth(t(15));
     sc.add.sprite(t(11), t(25) + 4, 'life-scarecrow', 2).setOrigin(0, 0).setDepth(t(27));
 
+    // ---------------- Theo's anvil: rings while he works (his sheet has no tool animation)
+    this.anvil = sc.add.sprite(t(31) + 2, t(12) + 4, 'life-anvil', 0).setOrigin(0, 0).setDepth(t(13));
+    this.sparks = sc.add.particles(t(31) + 10, t(12) + 6, this.sparkTexture(), {
+      lifespan: 450, speed: { min: 30, max: 70 }, angle: { min: 200, max: 340 }, gravityY: 160,
+      scale: { start: 1, end: 0.4 }, alpha: { start: 1, end: 0 }, quantity: 3, frequency: 650, emitting: false,
+    }).setDepth(t(13) + 2);
+
     // ---------------- chimney smoke and the windmill
     const chimneys: [number, number][] = [[1.1, 2.2], [6.6, 1.7], [20.5, 5.1], [30, 5.5], [31.4, 7.8], [18, 22.4], [33.1, 23.6]];
     chimneys.forEach(([x, y], i) => {
@@ -209,6 +219,29 @@ export class VillageLife {
       alpha: { start: 0.75, end: 0.45 },
       emitting: false,
     }).setDepth(9700);
+  }
+
+  /** Theo works when the village works: the anvil animates and throws sparks. */
+  setWorking(on: boolean) {
+    if (!this.anvil) return;
+    if (on && !this.anvil.anims.isPlaying) {
+      this.anvil.play(this.anim('anvil', [0, 1, 2, 3, 4, 5, 6, 7], 10));
+      this.sparks?.start();
+    } else if (!on && this.anvil.anims.isPlaying) {
+      this.anvil.stop().setFrame(0);
+      this.sparks?.stop();
+    }
+  }
+
+  private sparkTexture() {
+    const key = 'life-spark';
+    if (this.scene.textures.exists(key)) return key;
+    const tex = this.scene.textures.createCanvas(key, 2, 2)!;
+    const ctx = tex.getContext();
+    ctx.fillStyle = '#ffd36b';
+    ctx.fillRect(0, 0, 2, 2);
+    tex.refresh();
+    return key;
   }
 
   private smokeAnim() {
