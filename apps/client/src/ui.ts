@@ -111,7 +111,8 @@ export class Ui {
     const mal = w.regions.find((r) => r.id === 'malacca');
     rows.push(`<div class="wrow ship">Shipping ${pct(ship)} <span class="muted">· Malacca ${mal && mal.severity > 0.25 ? 'storm' : 'calm'}</span></div>`);
     const fc = w.regions.filter((r) => r.forecast).map((r) => `<div class="forecast">Forecast: ${esc(r.forecast)} (${esc(r.name)})</div>`).join('');
-    const fx = w.fx ? `<div class="wrow ship" title="${esc(w.fx.source)} · ${esc(w.fx.at)}">World money ×${w.fx.factor.toFixed(3)} <span class="muted">· ${esc(w.fx.quote)}, NEAR Intents</span></div>` : '';
+    const xaut = w.fx ? /XAUT ([\d.]+)/.exec(w.fx.quote)?.[1] : undefined;
+    const fx = w.fx ? `<div class="wrow ship" title="${esc(w.fx.quote)} · ${esc(w.fx.source)} · ${esc(w.fx.at)}">World money ×${w.fx.factor.toFixed(3)} <span class="muted">· gold ${xaut ? `$${Math.round(Number(xaut))}` : ''} via NEAR Intents</span></div>` : '';
     $('#world').innerHTML = `<h3>World market today</h3>${rows.join('')}${fx}${fc}<div class="src muted">Weather: ${esc(w.source)} · Open-Meteo (CC BY 4.0)${w.fx ? ' · gold rate: NEAR Intents' : ''}</div>`;
   }
 
