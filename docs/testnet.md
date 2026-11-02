@@ -221,17 +221,20 @@ The game server needs a long-running process (WebSocket), so it runs on Railway;
 2. Environment variables: `VITE_SERVER_URL=wss://<railway domain>`, `VITE_GOOGLE_CLIENT_ID`, `VITE_HEARTH_CONTRACT=hearthmarket.testnet`. They are baked in at build time: redeploy after changing them.
 3. Add the Vercel domain (no trailing slash) to the OAuth client's **Authorized JavaScript origins**.
 
-A build from GitHub has no art pack, so the hosted page shows the stand-in art. To publish the real art, build on your machine (where `npm run assets` has run) and upload the build:
+A build from GitHub has no art pack (its license forbids putting it in a public repo), so the page shows stand-in art. To build with the real art on every push, keep the zip in a **private** repository and let the build fetch it:
 
-```powershell
-npm i -g vercel
-vercel link                                   # pick the existing "hearthmarket" project
-vercel pull --yes --environment=production    # the project's settings and VITE_* variables
-vercel build --prod
-vercel deploy --prebuilt --prod
-```
+1. On GitHub create a **private** repository, e.g. `hearthmarket-art`, and upload `Cute_Fantasy.zip` to it (Add file → Upload files).
+2. Create a fine-grained token: GitHub → Settings → Developer settings → Fine-grained tokens → Generate. Repository access: only `hearthmarket-art`. Permissions: Contents → Read-only. Copy the token.
+3. Vercel → project → Settings → Environment Variables (Production and Preview):
 
-A later push to `main` builds from GitHub again (stand-in art); run the four commands again after your last push. Check with Kenmi that the license covers a public web build of the game.
+   ```
+   ASSET_PACK_URL=https://api.github.com/repos/<your-github-name>/hearthmarket-art/contents/Cute_Fantasy.zip
+   ASSET_PACK_TOKEN=<the token>
+   ```
+
+4. Redeploy. The build log shows `fetch-art: imported ... files`; without the variables, or if the download fails, it shows a warning and builds with stand-in art (the build never fails over art).
+
+The token only reads that one private repo; it lives in Vercel, never in code. Check with Kenmi that the license covers a public web build of the game (the images are served to players' browsers, as in any web game).
 
 ## Troubleshooting
 
