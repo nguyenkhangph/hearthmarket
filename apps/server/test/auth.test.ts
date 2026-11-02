@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { authenticate, base58, derivePlayerAccount, ed25519PublicFromSeed, GoogleVerifier, playerIdFor } from '../src/auth.ts';
+import { authenticate, base58, claimKey, derivePlayerAccount, ed25519PublicFromSeed, exportPlayerKey, GoogleVerifier, playerIdFor } from '../src/auth.ts';
+import { KeyPair } from 'near-api-js';
 
 const CLIENT = '1234-abc.apps.googleusercontent.com';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -80,5 +81,32 @@ describe('player accounts', () => {
     expect(s).toMatchObject({ auth: 'dev', name: 'khang' });
     expect(s.playerId).toBe(playerIdFor('dev', 'khang@example.com'));
     await expect(authenticate({ kind: 'google', idToken: 'x.y.z' }, {}, cfg)).rejects.toThrow('not configured');
+  });
+});
+
+describe('claim your account', () => {
+  const cfg = { googleClientId: CLIENT, devLogin: true, playerKeySecret: 'test-secret' };
+
+  it('exports a key any NEAR wallet can import, matching the player\'s account', () => {
+    const subject = 'google:123';
+    const key = exportPlayerKey('test-secret', subject);
+    expect(key).toMatch(/^ed25519:[1-9A-HJ-NP-Za-km-z]{80,90}$/);
+    const kp = KeyPair.fromString(key as `ed25519:${string}`);
+    expect(kp.getPublicKey().toString()).toBe(derivePlayerAccount('test-secret', subject).publicKey);
+  });
+
+  it('gives the key only to the same Google account, with a fresh token', async () => {
+    const s = await authenticate({ kind: 'google', idToken: token({}) }, {}, cfg, verifier());
+    const k = await claimKey(s, token({}), cfg, verifier());
+    expect(k.accountId).toBe(s.account);
+    expect(KeyPair.fromString(k.privateKey as `ed25519:${string}`).getPublicKey().toString()).toBe(derivePlayerAccount('test-secret', s.subject!).publicKey);
+    await expect(claimKey(s, token({ sub: 'someone-else' }), cfg, verifier())).rejects.toThrow('another account');
+    await expect(claimKey(s, undefined, cfg, verifier())).rejects.toThrow('sign in with Google again');
+    await expect(claimKey(s, token({ exp: NOW / 1000 - 3600 }), cfg, verifier())).rejects.toThrow('expired');
+  });
+
+  it('never lets a typed-email session claim anything', async () => {
+    const s = await authenticate({ kind: 'dev', email: 'khang@example.com' }, {}, cfg);
+    await expect(claimKey(s, token({}), cfg, verifier())).rejects.toThrow('only Google accounts');
   });
 });

@@ -113,11 +113,35 @@ export function ed25519PublicFromSeed(seed: Buffer): Buffer {
   return createPublicKey(priv).export({ format: 'der', type: 'spki' }).subarray(-32);
 }
 
+const playerSeed = (secret: string, subject: string) => createHmac('sha256', secret).update(`hearthmarket-player:${subject}`).digest();
+
 /** Deterministic ed25519 key for a player; the private part never leaves this function. */
 export function derivePlayerAccount(secret: string, subject: string): PlayerAccount {
-  const seed = createHmac('sha256', secret).update(`hearthmarket-player:${subject}`).digest();
-  const pub = ed25519PublicFromSeed(seed);
+  const pub = ed25519PublicFromSeed(playerSeed(secret, subject));
   return { accountId: pub.toString('hex'), publicKey: `ed25519:${base58(pub)}` };
+}
+
+/**
+ * Claim-your-account: the player's full private key in NEAR's format (`ed25519:` + base58 of
+ * seed || public key), which any NEAR wallet can import. Only ever sent to the signed-in
+ * owner of that Google account, after a fresh token check (see `claimKey`).
+ */
+export function exportPlayerKey(secret: string, subject: string): string {
+  const seed = playerSeed(secret, subject);
+  return `ed25519:${base58(Buffer.concat([seed, ed25519PublicFromSeed(seed)]))}`;
+}
+
+/**
+ * Hands a Google player their account key. Needs a valid Google ID token for the same Google
+ * account as the session (so a stolen WebSocket alone is not enough). Typed-email sessions
+ * have no proof of identity and can never claim.
+ */
+export async function claimKey(session: Session, idToken: string | undefined, cfg: AuthConfig, google?: GoogleVerifier) {
+  if (session.auth !== 'google' || !session.subject) throw new Error('only Google accounts can be claimed');
+  if (!google || !idToken) throw new Error('sign in with Google again to claim');
+  const id = await google.verify(idToken);
+  if (`google:${id.sub}` !== session.subject) throw new Error('that Google token belongs to another account');
+  return { accountId: session.account, privateKey: exportPlayerKey(cfg.playerKeySecret, session.subject) };
 }
 
 /** Engine player id for an identity: short, stable, not the raw email. */
@@ -137,6 +161,8 @@ export interface Session {
   name: string;
   account: string;
   auth: 'google' | 'dev';
+  /** key-derivation subject (server only, never sent to clients) */
+  subject?: string;
 }
 
 export interface AuthConfig {
@@ -154,7 +180,7 @@ export async function authenticate(auth: HelloAuth | undefined, legacy: { player
     const id = await google.verify(auth.idToken);
     const acct = derivePlayerAccount(cfg.playerKeySecret, `google:${id.sub}`);
     const name = (id.name ?? id.email?.split('@')[0] ?? 'player').slice(0, 32);
-    return { playerId: playerIdFor('google', id.sub), name, account: acct.accountId, auth: 'google' };
+    return { playerId: playerIdFor('google', id.sub), name, account: acct.accountId, auth: 'google', subject: `google:${id.sub}` };
   }
   if (!cfg.devLogin) throw new Error('Sign in with Google to play online');
   const raw = (auth?.kind === 'dev' ? auth.email ?? auth.name : legacy.playerId ?? legacy.name) ?? '';

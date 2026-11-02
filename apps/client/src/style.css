@@ -184,3 +184,12 @@ body[data-art='fallback'] .art-fallback { display: inline; }
 
 .deal-mini { background: #161925; border-left: 3px solid var(--up); border-radius: 6px; padding: 6px 8px; margin: 4px 0; }
 .deal-mini.no-deal { border-left-color: var(--down); }
+
+button.linkish { background: none; border: none; box-shadow: none; padding: 0; color: var(--blue); font: inherit; text-decoration: underline dotted; cursor: pointer; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+@media (max-width: 800px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
+.break { overflow-wrap: anywhere; }
+.secret { background: #161925; border: 1px dashed #b13a31; border-radius: 6px; padding: 8px; font-size: 12px; overflow-wrap: anywhere; user-select: all; }
+.steps { padding-left: 18px; }
+.steps li { margin: 4px 0; }
+a.btn { display: inline-block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; text-decoration: none; color: var(--text); }
