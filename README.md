@@ -51,6 +51,8 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | Red team: an obedient model's `hire` of 500 timber Jack does not have, signed with Theo's own key and **refused by the contract** ("not enough goods") | [failed tx 7KAJmPGw…](https://testnet.nearblocks.io/txns/7KAJmPGwXn4WBn7j7uGGSfWn7bjc5eriy9X75fmw3LUa) |
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
 | **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, red-team score) | `/dashboard` on the hosted client, data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
+| Hosted agent brains | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` (day plans, agent-to-agent deals, haggling); rules while nobody is online |
+| Hosted world money | NEAR Intents 1Click: tokenized gold XAUT, e.g. 3937.30 USD → world prices ×0.965 (3 Nov 2026) |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
 
 Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hire`, `market_buy`, `market_sell`, `world_trade`), signed with its own key. To run your own deployment: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
@@ -143,7 +145,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Player orders and badges on chain | code and tests done; testnet run being verified |
 | NEP-141 gold, NEP-171 badges | in contract version 2 (unit-tested) |
 | Google sign-in, derived player accounts | working (local and hosted) |
-| NPC brains on NEAR AI Cloud | code and tests done; off by default (rule brain), needs a NEAR AI API key; if the model fails, haggling falls back to the rules |
+| NPC brains on NEAR AI Cloud | working on the hosted server (`deepseek/deepseek-v4.1-flash`); off by default locally (needs a key); if the model fails, everything falls back to the rules |
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
 | World money from NEAR Intents (tokenized-gold price moves world prices, ±10% at most) | working (`WORLD_FX=near-intents`, default) |
 | Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
