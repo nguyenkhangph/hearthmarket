@@ -333,8 +333,13 @@ export class ChainMirror {
   startDay(v: Village, world?: WorldPostInput): boolean {
     if (this.opts.batchProduce) this.flushProduce();
     const now = (this.opts.now ?? Date.now)();
-    if (!this.active) return false;
-    if (!this.opts.operator || now - this.lastDayAt < (this.opts.minDayMs ?? 50_000)) return false;
+    if (!this.active || !this.opts.operator) return false;
+    if (now - this.lastDayAt < (this.opts.minDayMs ?? 50_000)) {
+      // no full reconcile yet, but the contract's day (NPC daily budgets, order deadlines)
+      // must still turn with the game's, or budgets add up over several game days
+      this.enqueue([this.op('advance_day', {})], true);
+      return false;
+    }
     this.lastDayAt = now;
     const s = v.s;
     const gold: [string, string][] = NPCS.map((id) => [NPC_DEFS[id].account, String(s.npcs[id].gold)]);

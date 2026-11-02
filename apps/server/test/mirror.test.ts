@@ -158,6 +158,21 @@ describe('chain mirror: a whole game', () => {
     now += 60_000;
     expect(m.startDay(game.village)).toBe(true);
   });
+
+  it('turns the contract\'s day every game day, also between two reconciles', async () => {
+    let now = 0;
+    const { m, chain } = mirror({ minDayMs: 600_000, now: () => now });
+    const game = new Game({ seed: 1, mirror: m }, new NpcBrain(null), new NpcSigner(chain, CONTRACT), chain);
+    m.startDay(game.village);
+    for (let i = 0; i < 3; i++) {
+      now += 120_000;
+      m.startDay(game.village);
+    }
+    await m.idle();
+    const ops = chain.calls.filter((c) => c.signer === OPERATOR).map((c) => c.method);
+    expect(ops.filter((x) => x === 'reconcile')).toHaveLength(1);
+    expect(ops.filter((x) => x === 'advance_day')).toHaveLength(3);
+  });
 });
 
 describe('chain mirror: gas budget', () => {
