@@ -102,3 +102,18 @@ describe('agent deals: negotiation', () => {
     expect(parseTurn('no json')).toMatchObject({ accept: false });
   });
 });
+
+describe('agent deals: model credits', () => {
+  it('uses rules, not the model, while nobody is online', async () => {
+    const v = createVillage({ seed: 6 });
+    const llm = new Script(() => ({ accept: true, price: 5, say: 'ok' }));
+    let online = false;
+    const n = new Negotiator(llm, { everyMs: 0, useModel: () => online });
+    await n.onNewDay(v);
+    expect(llm.calls).toHaveLength(0);
+    expect(v.s.deals?.every((d) => d.by === 'rules')).toBe(true);
+    online = true;
+    await n.onNewDay(v);
+    expect(llm.calls.length).toBeGreaterThan(0);
+  });
+});

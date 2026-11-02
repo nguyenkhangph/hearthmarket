@@ -76,7 +76,9 @@ const llm = llmOn ? new WithFallback(new OpenAiCompatible(primary), fallback.bas
 const brain = new NpcBrain(llm);
 const planner = llm ? new DayPlanner(brain, { everyMs: config.planEveryMinutes * 60_000, log }) : undefined;
 // agent-to-agent deals: the model when configured (every NPC_DEAL_MINUTES per pair), rules otherwise (daily)
-const negotiator = new Negotiator(llm, { everyMs: config.dealEveryMinutes * 60_000, log });
+// model calls cost credits: only while someone is playing (rules are free and run regardless)
+const someoneOnline = () => sessions.size > 0;
+const negotiator = new Negotiator(llm, { everyMs: config.dealEveryMinutes * 60_000, log, useModel: someoneOnline });
 
 // ---------------------------------------------------------------- players
 let secret = config.auth.playerKeySecret;
@@ -143,7 +145,7 @@ function onPresence(players: number) {
 
 const game = new Game(
   { seed: config.seed, world, mirror, worldPost: currentWorldPost, onNewDay: (v) => {
-    planner?.onNewDay(v);
+    if (someoneOnline()) planner?.onNewDay(v);
     void negotiator.onNewDay(v);
   } },
   brain, signer, chain,
