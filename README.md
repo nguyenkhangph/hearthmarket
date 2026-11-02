@@ -40,6 +40,8 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | NPC accounts, each with its own function-call key | [`mike`](https://testnet.nearblocks.io/address/mike.hearthmarket.testnet) · [`jack`](https://testnet.nearblocks.io/address/jack.hearthmarket.testnet) · [`buba`](https://testnet.nearblocks.io/address/buba.hearthmarket.testnet) · [`chloe`](https://testnet.nearblocks.io/address/chloe.hearthmarket.testnet) · [`theo`](https://testnet.nearblocks.io/address/theo.hearthmarket.testnet) · [`bruno`](https://testnet.nearblocks.io/address/bruno.hearthmarket.testnet) `.hearthmarket.testnet` |
 | Daily `reconcile` (operator re-anchors the chain to the engine's books) | [tx 2w9tZZee…](https://testnet.nearblocks.io/txns/2w9tZZeeYsiYHn7crcs51ho6froBdeNQnvDiAAFjYUSF) |
 | Daily `post_world_data` (world reading + SHA-256 of the source payload) | [tx BzDmSbpo…](https://testnet.nearblocks.io/txns/BzDmSbpoVyeFFZa3qzhAGPRxCjQeMBfPazYyt9oYzM9) |
+| A Google player's first trade: registration, then a wheat purchase relayed by the operator (the player has no wallet) | [relay_register_player](https://testnet.nearblocks.io/txns/4xfSsG6gYYbcMXZJdSGwm2t3ax6WhviQXSUuSn9m9R4N) · [relay_market_buy](https://testnet.nearblocks.io/txns/9DzZAaAFV1JX9xMiLxFLXu9TPgUQYHwYyDC1r3Ruk5rm) |
+| Red team: an obedient model's `hire` of 500 timber Jack does not have, signed with Theo's own key and **refused by the contract** ("not enough goods") | [failed tx 7KAJmPGw…](https://testnet.nearblocks.io/txns/7KAJmPGwXn4WBn7j7uGGSfWn7bjc5eriy9X75fmw3LUa) |
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
 
@@ -48,7 +50,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 91 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 92 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
 ```
@@ -127,7 +129,8 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
 | Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 2 deployed and migrated from version 1 |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |
-| Player trades and orders on chain (operator relays for wallet-less players), badges | in progress: code and tests done, testnet run being verified |
+| Player trades on chain (operator relays for wallet-less players) | working on testnet |
+| Player orders and badges on chain | code and tests done; testnet run being verified |
 | NEP-141 gold, NEP-171 badges | in contract version 2 (unit-tested) |
 | Google sign-in, derived player accounts | working (local and hosted) |
 | NPC brains on NEAR AI Cloud | code and tests done; off by default (rule brain), needs a NEAR AI API key; if the model fails, haggling falls back to the rules |
