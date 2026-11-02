@@ -135,8 +135,13 @@ export class Negotiator {
 
   constructor(
     private llm: LlmClient | null,
-    private opts: { everyMs: number; log?: (line: string) => void; now?: () => number },
+    private opts: { everyMs: number; log?: (line: string) => void; now?: () => number; useModel?: () => boolean },
   ) {}
+
+  /** the model, unless the caller says not now (nobody online: rules are free) */
+  private get model(): LlmClient | null {
+    return this.llm && (this.opts.useModel?.() ?? true) ? this.llm : null;
+  }
 
   get name() {
     return this.llm ? this.llm.name : 'rules';
@@ -149,7 +154,7 @@ export class Negotiator {
     const due = dealPairs().filter((p) => {
       const k = `${p.buyer}:${p.seller}:${p.item}`;
       // rules are free: every day; the model only every `everyMs`
-      if (this.llm && now - (this.last.get(k) ?? -Infinity) < this.opts.everyMs) return false;
+      if (this.model && now - (this.last.get(k) ?? -Infinity) < this.opts.everyMs) return false;
       this.last.set(k, now);
       return true;
     });
@@ -163,11 +168,12 @@ export class Negotiator {
   private async run(v: Village, pairs: Pair[]) {
     for (const p of pairs) {
       let res: NegotiationResult;
-      let by = this.name;
+      const model = this.model;
+      let by = model ? model.name : 'rules';
       try {
-        if (this.llm) {
+        if (model) {
           this.calls++;
-          res = await negotiateLlm(this.llm, v, p);
+          res = await negotiateLlm(model, v, p);
         } else res = negotiateRules(v, p);
       } catch (e) {
         this.failures++;
