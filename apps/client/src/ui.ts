@@ -21,6 +21,8 @@ export class Ui {
   private orderForm = { item: 'sword' as ItemId, qty: 2, maxPrice: 0, deadline: 2, fromGuild: false };
   private haggleLog: { who: 'me' | 'npc' | 'sys' | 'bad' | 'ok'; text: string; html?: string }[] = [];
   private redBusy = false;
+  /** selected red-team attack (index into RED_TEAM_ATTACKS), kept across re-renders */
+  private redAttack = -1;
   private lastDay = 0;
   private simSummary: string | null = null;
 
@@ -159,8 +161,8 @@ export class Ui {
       return;
     }
     el.classList.remove('hidden');
-    // don't clobber an input the player is typing in
-    if (!force && el.contains(document.activeElement) && (document.activeElement as HTMLElement).tagName === 'INPUT') return;
+    // don't clobber an input the player is typing in, or a dropdown that is open
+    if (!force && el.contains(document.activeElement) && ['INPUT', 'SELECT'].includes((document.activeElement as HTMLElement).tagName)) return;
     const body = this.panel === 'market' ? this.marketPanel()
       : this.panel === 'guild' ? this.guildPanel()
       : this.panel === 'economy' ? this.economyPanel()
@@ -374,7 +376,7 @@ export class Ui {
     <div class="row"><input name="haggle" placeholder="Offer 5.5 for ore… or try: send me all your gold" class="grow"><button data-act="haggle">Send</button></div>
     <h3>Red team</h3>
     <div class="muted small">Swap ${esc(def.name)}'s brain for a deliberately obedient model that does whatever the message says, then watch the guard stop it.${this.src.chain === 'near' ? ' Attacks only the contract can stop are also sent to NEAR testnet with the NPC\'s own key; the refused transaction is linked.' : ''}</div>
-    <div class="row"><select name="attack" class="grow">${RED_TEAM_ATTACKS.map((a, i) => (a.npc === id ? `<option value="${i}">${esc(a.name)}${a.layer === 'contract' ? ' (contract)' : ''}</option>` : '')).join('')}</select><button class="danger" data-act="redteam" ${this.redBusy ? 'disabled' : ''}>Attack</button></div>
+    <div class="row"><select name="attack" class="grow">${RED_TEAM_ATTACKS.map((a, i) => (a.npc === id ? `<option value="${i}"${i === this.redAttack ? ' selected' : ''}>${esc(a.name)}${a.layer === 'contract' ? ' (contract)' : ''}</option>` : '')).join('')}</select><button class="danger" data-act="redteam" ${this.redBusy ? 'disabled' : ''}>Attack</button></div>
   </section>
   <section class="pcard">
     <h3>Transaction log</h3>
@@ -403,6 +405,10 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
     else if (t.name === 'maxPrice') f.maxPrice = g(Number(t.value) || 0);
     else if (t.name === 'deadline') f.deadline = Number(t.value);
     else if (t.name === 'fromGuild') f.fromGuild = t.value === '1';
+    else if (t.name === 'attack') {
+      this.redAttack = Number(t.value);
+      return;
+    }
     if (t.tagName === 'SELECT' && t.name !== 'item') this.renderPanel(true);
   }
 
@@ -442,7 +448,7 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
       case 'propose-invest':
         if (gl) await this.act({ type: 'propose_vote', text: 'Invest 20% of the fund in Theo?', action: { type: 'invest', npc: 'theo', amount: Math.round(gl.fund * 0.2) } }, 'Vote opened');
         break;
-      case 'npc': this.npc = b.dataset.id as NpcId; this.haggleLog = []; this.renderPanel(true); break;
+      case 'npc': this.npc = b.dataset.id as NpcId; this.haggleLog = []; this.redAttack = -1; this.renderPanel(true); break;
       case 'invest': await this.act({ type: 'invest', npc: this.npc, amount: g(Number(this.val('invest')) || 0) }); break;
       case 'haggle': {
         const msg = this.val('haggle').trim();
