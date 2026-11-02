@@ -149,7 +149,7 @@ tr.me { background: #ffffff10; }
 .npc-tabs button.active { border-color: var(--gold); color: var(--gold); }
 canvas.portrait { width: 128px; height: 128px; image-rendering: pixelated; background: var(--card-2); border-radius: 10px; }
 .mem { font-size: 13px; padding: 4px 0; border-bottom: 1px solid #ffffff0d; }
-.tx { display: grid; grid-template-columns: 44px 1fr; gap: 6px; font-size: 13px; padding: 5px 0; }
+div.tx { display: grid; grid-template-columns: 44px 1fr; gap: 6px; font-size: 13px; padding: 5px 0; }
 .tx time { font-family: var(--mono); color: var(--muted); font-size: 12px; }
 .tx.bad span { color: var(--down); }
 .why { background: #3a2220; border: 1px solid #7a3b30; border-radius: 8px; padding: 6px 12px; margin: 10px 0; }
