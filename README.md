@@ -4,7 +4,7 @@ A pixel-art village where every NPC is an AI agent with its own NEAR account. Th
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
-> Status, 3 Nov 2026: the contract runs on NEAR testnet at `hearthmarket.testnet` (version 2 live; version 3 adds NEP-245 goods), and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
+> Status, 3 Nov 2026: the contract (version 3: NEP-141 gold, NEP-171 badges, NEP-245 goods) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
 
 ## The problem
 
@@ -43,7 +43,7 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 
 | What | Link |
 | --- | --- |
-| Contract (version 2: `get_version` returns `"2"`) | [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns) |
+| Contract (version 3: `get_version` returns `"3"`) | [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns) · [version 3 deploy](https://testnet.nearblocks.io/txns/HJ5Z9FWMsRQjY5UYDHCYQkAzamUH2pSTnCz9JEDBJsdH) |
 | NPC accounts, each with its own function-call key | [`mike`](https://testnet.nearblocks.io/address/mike.hearthmarket.testnet) · [`jack`](https://testnet.nearblocks.io/address/jack.hearthmarket.testnet) · [`buba`](https://testnet.nearblocks.io/address/buba.hearthmarket.testnet) · [`chloe`](https://testnet.nearblocks.io/address/chloe.hearthmarket.testnet) · [`theo`](https://testnet.nearblocks.io/address/theo.hearthmarket.testnet) · [`bruno`](https://testnet.nearblocks.io/address/bruno.hearthmarket.testnet) `.hearthmarket.testnet` |
 | Daily `reconcile` (operator re-anchors the chain to the engine's books) | [tx 2w9tZZee…](https://testnet.nearblocks.io/txns/2w9tZZeeYsiYHn7crcs51ho6froBdeNQnvDiAAFjYUSF) |
 | Daily `post_world_data` (world reading + SHA-256 of the source payload) | [tx BzDmSbpo…](https://testnet.nearblocks.io/txns/BzDmSbpoVyeFFZa3qzhAGPRxCjQeMBfPazYyt9oYzM9) |
@@ -137,7 +137,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Public live-economy dashboard (`dashboard.html`, `/api/dashboard`) | working |
 | Agent-to-agent deals: buyer and seller NPCs negotiate the day's price, each with its own brain (NEAR AI Cloud, or rules), inside a deal guard; the engine hires at the agreed price | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
-| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 2 deployed and migrated from version 1 |
+| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 3 (upgraded from 1 → 2 with `migrate`, 2 → 3 code only) |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |
 | Player trades on chain (operator relays for wallet-less players) | working on testnet |
 | Player orders and badges on chain | code and tests done; testnet run being verified |
@@ -147,7 +147,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
 | World money from NEAR Intents (tokenized-gold price moves world prices, ±10% at most) | working (`WORLD_FX=near-intents`, default) |
 | Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
-| NEP-245 goods (contract version 3) | written and unit-tested; on testnet after the version 3 deploy (`docs/testnet.md`) |
+| NEP-245 goods (contract version 3) | working on testnet |
 | Market wars, guild funds on chain | planned |
 
 ## Built during NEAR HACKATHON
