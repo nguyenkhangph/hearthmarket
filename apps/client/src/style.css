@@ -69,6 +69,8 @@ body { display: flex; flex-direction: column; }
 .spacer { flex: 1; }
 .speed { font-size: 12px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
 body:not([data-mode='guest']) .guest-only { display: none; }
+nav a.navlink { display: inline-flex; align-items: center; padding: 6px 12px; color: var(--muted); text-decoration: none; font-size: 13px; }
+nav a.navlink:hover { color: var(--text); }
 main { flex: 1; display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
 #stage { position: relative; min-height: 0; overflow: hidden; background: #1b1e2b; }
 #game { position: absolute; inset: 0; }

@@ -41,6 +41,18 @@ export interface MirrorOptions {
   now?: () => number;
 }
 
+export interface ChainEvent {
+  at: number;
+  signer: string;
+  method: string;
+  ok: boolean;
+  hash?: string;
+  reason?: string;
+  redTeam?: boolean;
+}
+
+const RECENT_CAP = 60;
+
 export interface WorldPostInput {
   source: string;
   raw: string;
@@ -82,6 +94,10 @@ export class ChainMirror {
   /** false while nobody is playing: NPC actions stay in the engine, no gas is spent */
   private active = true;
   readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0 };
+  /** landed calls per method since the server started */
+  readonly byMethod: Record<string, { ok: number; failed: number }> = {};
+  /** the last calls that reached the chain, newest last (dashboard) */
+  readonly events: ChainEvent[] = [];
   /** called with (placeholder, final hash or `failed:...`) */
   onSettled: (placeholder: string, hash: string) => void = () => {};
 
@@ -180,6 +196,14 @@ export class ChainMirror {
     return waits;
   }
 
+  private record(e: Omit<ChainEvent, 'at'>) {
+    const m = (this.byMethod[e.method] ??= { ok: 0, failed: 0 });
+    if (e.ok) m.ok++;
+    else m.failed++;
+    this.events.push({ at: (this.opts.now ?? Date.now)(), ...e });
+    if (this.events.length > RECENT_CAP) this.events.splice(0, this.events.length - RECENT_CAP);
+  }
+
   private settle(placeholder: string, hash: string) {
     this.onSettled(placeholder, hash);
     for (const p of this.aliases.get(placeholder) ?? []) this.onSettled(p, hash);
@@ -200,12 +224,14 @@ export class ChainMirror {
     try {
       const hash = await this.chain.call(signer, this.opts.contract, method, args, DEFAULT_TGAS);
       this.stats.ok++;
+      this.record({ signer, method, ok: true, hash, redTeam: true });
       this.log(`red team: contract ACCEPTED ${signer} ${method} tx=${hash}`);
       return { ok: true, hash, reason: 'accepted' };
     } catch (e) {
       this.stats.failed++;
       const err = e as Error & { txHash?: string };
       const reason = err.message.replace(/^.*panicked: /, '').replace(/^Smart contract panicked: /, '').slice(0, 120);
+      this.record({ signer, method, ok: false, hash: err.txHash, reason, redTeam: true });
       this.log(`red team: contract refused ${signer} ${method}${err.txHash ? ` tx=${err.txHash}` : ''}: ${reason}`);
       return { ok: false, hash: err.txHash, reason };
     }
@@ -408,9 +434,12 @@ export class ChainMirror {
           last = await this.chain.call(c.signer, this.opts.contract, c.method, c.args, c.tgas);
         } catch (e) {
           for (const r of calls.slice(calls.indexOf(c))) r.onFail?.();
+          const err = e as Error & { txHash?: string };
+          this.record({ signer: c.signer, method: c.method, ok: false, hash: err.txHash, reason: err.message.replace(/^.*panicked: /, '').slice(0, 80) });
           throw e;
         }
         c.onOk?.();
+        this.record({ signer: c.signer, method: c.method, ok: true, hash: last });
         this.log(`chain ok   ${c.signer} ${c.method} tx=${last}`);
       }
       return last;

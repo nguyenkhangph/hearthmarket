@@ -18,5 +18,10 @@ export default defineConfig(({ command }) => ({
   // read the repo-root .env; only VITE_* variables reach the browser
   envDir: '../../',
   server: { port: 5173 },
-  build: { target: 'es2022', chunkSizeWarningLimit: 2000 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 2000,
+    // two pages: the game, and the public live-economy dashboard
+    rollupOptions: { input: { main: fileURLToPath(new URL('index.html', import.meta.url)), dashboard: fileURLToPath(new URL('dashboard.html', import.meta.url)) } },
+  },
 }));

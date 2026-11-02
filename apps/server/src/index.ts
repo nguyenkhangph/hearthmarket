@@ -16,6 +16,7 @@ import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
 import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
+import { dashboardView, type RedTeamStats } from './dashboard.ts';
 import { authenticate, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
 
 setContractAccount(config.near.contract);
@@ -147,6 +148,8 @@ const sessions = new Map<WebSocket, Session>();
 const lastAttack = new WeakMap<WebSocket, number>();
 /** times of on-chain red-team proofs in the last hour (each one costs a little gas) */
 const proofs: number[] = [];
+const redTeam: RedTeamStats = { runs: 0, blocked: 0, bySigner: 0, byContract: 0, onChain: 0 };
+const startedAt = Date.now();
 
 const http = createServer((req, res) => {
   res.setHeader('access-control-allow-origin', '*');
@@ -159,6 +162,9 @@ const http = createServer((req, res) => {
     }));
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));
+  } else if (req.url === '/api/dashboard') {
+    res.setHeader('cache-control', 'no-store');
+    res.end(JSON.stringify(dashboardView(v, { online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt })));
   } else if (req.url === '/api/state') {
     res.end(JSON.stringify(v.snapshot()));
   } else {
@@ -213,6 +219,12 @@ wss.on('connection', (ws) => {
       try {
         const out = await game.redTeam(msg.attack!, session.account, { proveOnChain });
         if (out.proof) proofs.push(now);
+        redTeam.runs++;
+        if (out.blocked) redTeam.blocked++;
+        if (out.layer === 'signer') redTeam.bySigner++;
+        if (out.layer === 'contract') redTeam.byContract++;
+        if (out.proof?.hash) redTeam.onChain++;
+        redTeam.last = { attack: out.attack, npc: out.npc, layer: out.layer, hash: out.proof?.hash, at: now };
         reply(out);
       } catch (e) {
         reply({ error: (e as Error).message });
