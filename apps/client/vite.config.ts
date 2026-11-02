@@ -7,7 +7,7 @@ export default defineConfig(({ command }) => ({
       // hosted builds: pull the licensed art pack from a private URL (scripts/fetch-art.mjs)
       name: 'hearth-fetch-art',
       async buildStart() {
-        if (command !== 'build' || !process.env.ASSET_PACK_URL) return;
+        if (command !== 'build') return; // fetchArt logs whether ASSET_PACK_URL is set
         // a runtime URL, so the config bundler leaves the script alone
         const script = pathToFileURL(fileURLToPath(new URL('../../scripts/fetch-art.mjs', import.meta.url))).href;
         const { fetchArt } = (await import(script)) as { fetchArt: () => Promise<void> };
