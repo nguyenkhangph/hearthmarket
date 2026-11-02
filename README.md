@@ -4,7 +4,7 @@ A pixel-art village where every NPC is an AI agent with its own NEAR account. Re
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
-> Status: early build, 27 Oct 2026. The game loop, economy engine, NPC guard, injection tests and contract (version 2, on testnet) run today. Items marked *planned* in the table at the bottom are not built yet.
+> Status, 2 Nov 2026: the contract (version 2) runs on NEAR testnet at `hearthmarket.testnet`, and the game server mirrors NPC actions, player trades and daily world data to it. NPC brains run on fixed rules by default; NEAR AI Cloud day plans turn on with an API key (`NPC_BRAIN=llm`). The **Status** table at the bottom says what runs today and what is still in progress.
 
 ## The problem
 
@@ -30,12 +30,23 @@ npm run dev            # http://localhost:5173
 
 Online mode (server-authoritative, shared village): `npm run dev:server` then open `http://localhost:5173/?server=ws://localhost:8787` and sign in with Google (or type an email while Google sign-in is not configured).
 
-Live deployment: contract [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns), NPCs `mike/jack/buba/chloe/theo/bruno.hearthmarket.testnet`. To run your own: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
+### Live on NEAR testnet
+
+| What | Link |
+| --- | --- |
+| Contract (version 2: `get_version` returns `"2"`) | [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns) |
+| NPC accounts, each with its own function-call key | [`mike`](https://testnet.nearblocks.io/address/mike.hearthmarket.testnet) · [`jack`](https://testnet.nearblocks.io/address/jack.hearthmarket.testnet) · [`buba`](https://testnet.nearblocks.io/address/buba.hearthmarket.testnet) · [`chloe`](https://testnet.nearblocks.io/address/chloe.hearthmarket.testnet) · [`theo`](https://testnet.nearblocks.io/address/theo.hearthmarket.testnet) · [`bruno`](https://testnet.nearblocks.io/address/bruno.hearthmarket.testnet) `.hearthmarket.testnet` |
+| Daily `reconcile` (operator re-anchors the chain to the engine's books) | [tx 2w9tZZee…](https://testnet.nearblocks.io/txns/2w9tZZeeYsiYHn7crcs51ho6froBdeNQnvDiAAFjYUSF) |
+| Daily `post_world_data` (world reading + SHA-256 of the source payload) | [tx BzDmSbpo…](https://testnet.nearblocks.io/txns/BzDmSbpoVyeFFZa3qzhAGPRxCjQeMBfPazYyt9oYzM9) |
+| NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
+| Hosted game server (health check) | https://hearthserver-production-97fb.up.railway.app/api/health |
+
+Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hire`, `market_buy`, `market_sell`, `world_trade`), signed with its own key. To run your own deployment: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
 
 ### Verify the claims
 
 ```sh
-npm test              # 77 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 81 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
 ```
@@ -108,12 +119,18 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | 4 AI guilds playing like people | working |
 | Spending guard + 20 injection tests | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
-| Contract on testnet (`hearthmarket.testnet`), NPC keys | deployed (version 1); version 2 written and unit-tested, upgrade steps in `docs/testnet.md` |
-| NPC actions, player trades/orders, world data, badges on chain | code + tests on a mock chain; runs on testnet after the version 2 upgrade |
-| NEP-141 gold, NEP-171 badges | in contract version 2 |
-| Google sign-in, derived player accounts | working with a Google OAuth client id (`docs/testnet.md`) |
+| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 2 deployed and migrated from version 1 |
+| NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |
+| Player trades and orders on chain (operator relays for wallet-less players), badges | in progress: code and tests done, testnet run being verified |
+| NEP-141 gold, NEP-171 badges | in contract version 2 (unit-tested) |
+| Google sign-in, derived player accounts | working (local and hosted) |
+| NPC brains on NEAR AI Cloud | code and tests done; off by default (rule brain), needs a NEAR AI API key |
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
 | NEP-245 items, market wars, claim-your-account | planned |
+
+## Built during NEAR HACKATHON
+
+All code in this repository was written from 26 Oct 2026, after the hackathon announcement on 19 Oct 2026, so the whole history counts toward the event (rules, Q-001). There is no earlier codebase. Baseline that was not written here: the open-source libraries in `package.json` and `contracts/hearth/Cargo.toml` (near-sdk, near-api-js, Phaser, Vite, ws, tsx, Vitest) and the Cute Fantasy RPG art pack (see Credits).
 
 ## Credits
 
