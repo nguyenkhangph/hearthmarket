@@ -156,11 +156,89 @@ npm run world:check      # one Open-Meteo reading, the prices it gives, and the 
 
 Then `WORLD_SOURCE=open-meteo` in `.env` and restart the server. The oracle posts each day's reading with the SHA-256 of the full API payload; the payloads are kept in `data/world/posted/` so anyone can check a hash.
 
+## Gas: keeping the demo alive
+
+Every on-chain call burns a little testnet NEAR from the account that signs it: each NPC pays its own gas, the operator pays for `reconcile`, `post_world_data` and player relays. The faucet is limited, so the server spends carefully by default:
+
+| Setting (`.env`) | Default | What it does |
+| --- | --- | --- |
+| `CHAIN_IDLE_SECONDS` | 120 | Nobody online for this long: NPC actions stay in the engine, nothing is sent. The first player back triggers a fresh `reconcile`. |
+| `CHAIN_NPC_TX_PER_HOUR` | 20 | Calls per NPC per real hour. Order fills and player relays are never capped (they move escrow). Skipped actions stay in the engine; `reconcile` re-anchors balances. |
+| `CHAIN_BATCH_PRODUCE` | 1 | A day of production goes on chain as one `produce` per NPC and item. |
+| `CHAIN_DAY_SECONDS` | 600 | Real seconds between two day syncs (`reconcile` + `post_world_data`). |
+| `CHAIN_LOW_BALANCE_NEAR` | 0.1 | The server checks every signing account every 10 minutes and logs `LOW BALANCE ...`; `/api/health` lists the balances. |
+| `CHAIN_REDTEAM_PROOFS_PER_HOUR` | 12 | Red-team attacks sent to the contract on chain, all players together. |
+
+Check balances by hand:
+
+```powershell
+near account view-account-summary theo.hearthmarket.testnet network-config testnet now
+```
+
+Top up an NPC from the contract account (its key is in your keychain since step 2). The contract account itself keeps about 3.6 NEAR locked for the contract's storage, so only the rest can be sent:
+
+```powershell
+near tokens hearthmarket.testnet send-near theo.hearthmarket.testnet '0.3 NEAR' network-config testnet sign-with-keychain send
+```
+
+More testnet NEAR: create another faucet account and send most of it to the contract account:
+
+```powershell
+near account create-account sponsor-by-faucet-service hearthmarket-fund.testnet autogenerate-new-keypair save-to-keychain network-config testnet create
+near tokens hearthmarket-fund.testnet send-near hearthmarket.testnet '8 NEAR' network-config testnet sign-with-keychain send
+```
+
+Run only one server per set of keys. Two servers with the same keys (your laptop and the hosted one) fight over nonces and burn gas twice.
+
+## Hosted demo: server on Railway, client on Vercel
+
+The game server needs a long-running process (WebSocket), so it runs on Railway; the client is static and runs on Vercel.
+
+**Server (Railway)**
+
+1. New project → Deploy from GitHub repo. If Railway creates two services (`@hearth/client`, `@hearth/server`), delete the client one.
+2. Service settings: Root Directory empty (the repo root), Custom Start Command `npm run start -w @hearth/server`. Keep one replica: the village lives in memory.
+3. Networking → Generate Domain. The WebSocket address is the same host with `wss://`.
+4. Variables (Raw Editor), values from your `.env`, never `OWNER_PRIVATE_KEY`:
+
+   ```
+   NODE_VERSION=22
+   CHAIN=near
+   HEARTH_CONTRACT=hearthmarket.testnet
+   NEAR_RPC_URL=https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs
+   NPC_KEY_MIKE=...   NPC_KEY_JACK=...   NPC_KEY_BUBA=...   NPC_KEY_CHLOE=...   NPC_KEY_THEO=...   NPC_KEY_BRUNO=...
+   ORACLE_ACCOUNT=hearthmarket.testnet
+   ORACLE_KEY=...
+   PLAYER_KEY_SECRET=...      (same value as local, or players get new accounts)
+   GOOGLE_CLIENT_ID=....apps.googleusercontent.com
+   ```
+
+5. `https://<domain>/api/health` answers `{"ok":true,...,"chain":"near"}`.
+
+**Client (Vercel)**
+
+1. Import the repo, Root Directory `apps/client`, preset Vite.
+2. Environment variables: `VITE_SERVER_URL=wss://<railway domain>`, `VITE_GOOGLE_CLIENT_ID`, `VITE_HEARTH_CONTRACT=hearthmarket.testnet`. They are baked in at build time: redeploy after changing them.
+3. Add the Vercel domain (no trailing slash) to the OAuth client's **Authorized JavaScript origins**.
+
+A build from GitHub has no art pack, so the hosted page shows the stand-in art. To publish the real art, build on your machine (where `npm run assets` has run) and upload the build:
+
+```powershell
+npm i -g vercel
+vercel link                                   # pick the existing "hearthmarket" project
+vercel pull --yes --environment=production    # the project's settings and VITE_* variables
+vercel build --prod
+vercel deploy --prebuilt --prod
+```
+
+A later push to `main` builds from GitHub again (stand-in art); run the four commands again after your last push. Check with Kenmi that the license covers a public web build of the game.
+
 ## Troubleshooting
 
 | Message | Fix |
 | --- | --- |
-| `-429 ... Rate limits exceeded` (FastNEAR) | Public RPCs limit requests. List several in `.env`: `NEAR_RPC_URL=https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs` (the server moves to the next one on a 429), keep `SECONDS_PER_GAME_HOUR=2.5` or slower, and `CHAIN_MAX_TX_PER_MINUTE=40` |
+| `-429 ... Rate limits exceeded` (FastNEAR) | Public RPCs limit requests. List several in `.env`: `NEAR_RPC_URL=https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs` (the server moves to the next one on a 429), keep `SECONDS_PER_GAME_HOUR=5` and `CHAIN_MAX_TX_PER_MINUTE=20` |
+| `Not enough balance for theo.hearthmarket.testnet` / `LOW BALANCE` | That NPC is out of gas money. Top it up (see **Gas** above) |
 | `-429 ... ENDPOINT IS DEPRECATED` | `rpc.testnet.near.org` is rate-limited/deprecated. Set `NEAR_RPC_URL=https://test.rpc.fastnear.com` in `.env` and restart the server |
 | `cargo near deploy` fails with `LNK2019 unresolved external symbol` | Windows ABI step. Use `cargo near build non-reproducible-wasm --no-abi` and `near contract deploy ... use-file target\near\hearth.wasm` as above |
 | `does not exist on testnet` | Step 2 not done, or a typo in `HEARTH_CONTRACT` |
