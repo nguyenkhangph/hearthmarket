@@ -120,3 +120,14 @@ describe('OpenAI-compatible client', () => {
     await expect(c.complete([])).rejects.toThrow('HTTP 401: {"error":"invalid api key"}');
   });
 });
+
+describe('haggling when the model is down', () => {
+  it('falls back to the rule brain instead of failing the player', async () => {
+    const down: LlmClient = { name: 'NEAR AI Cloud', complete: async () => { throw new Error('HTTP 402 out of credits'); } };
+    const v = createVillage({ seed: 5 });
+    const p = await new NpcBrain(down).haggle(v, 'mike', 'I offer 5 for ore');
+    expect(p.action).toBeNull();
+    expect(p.reply).toContain('Mike');
+    expect(p.brain).toMatch(/^rules \(NEAR AI Cloud unavailable: HTTP 402/);
+  });
+});

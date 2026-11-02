@@ -1,4 +1,4 @@
-import { Account, type KeyPairString } from 'near-api-js';
+import { Account, JsonRpcProvider, type KeyPairString } from 'near-api-js';
 import type { ChainAdapter } from './signer.ts';
 
 /**
@@ -81,7 +81,7 @@ export class NearChain implements ChainAdapter {
         const r = res as unknown as { transaction?: { hash?: string }; transaction_outcome?: { id?: string } };
         return r.transaction?.hash ?? r.transaction_outcome?.id ?? 'unknown';
       } catch (e) {
-        if (!isRateLimited(e)) throw e;
+        if (!isRateLimited(e)) throw withTxHash(e);
         this.stats.rateLimited++;
         if (attempt >= retries) throw new Error(`RPC rate limit (tried ${attempt + 1}x on ${this.rpcUrls.length} endpoint${this.rpcUrls.length > 1 ? 's' : ''})`);
         this.stats.retried++;
@@ -92,6 +92,36 @@ export class NearChain implements ChainAdapter {
       await this.sleep(Math.min(8000, 600 * 2 ** attempt) + Math.floor(Math.random() * 300));
     }
   }
+}
+
+/**
+ * A contract that refuses a call still records a (failed) transaction on chain. near-api-js
+ * throws for it; keep the hash on the error (`txHash`) so the refusal can be linked.
+ */
+export function withTxHash(e: unknown): unknown {
+  if (!e || typeof e !== 'object') return e;
+  const x = e as { txHash?: string; transactionResult?: { transaction_outcome?: { id?: string }; transaction?: { hash?: string } } };
+  const hash = x.txHash ?? x.transactionResult?.transaction?.hash ?? x.transactionResult?.transaction_outcome?.id;
+  if (hash) x.txHash = hash;
+  return e;
+}
+
+/** NEAR per byte of storage on NEAR (protocol constant: 1e19 yoctoNEAR) */
+const STORAGE_NEAR_PER_BYTE = 1e-5;
+
+export interface BalanceReader {
+  balance(account: string): Promise<number>;
+}
+
+/** Adds a balance reader (spendable NEAR = balance minus storage) to a NearChain. */
+export function withBalances(chain: NearChain): NearChain & BalanceReader {
+  const provider = new JsonRpcProvider({ url: chain.rpcUrls[0] });
+  return Object.assign(chain, {
+    async balance(accountId: string) {
+      const v = await provider.viewAccount({ accountId });
+      return Number(v.amount) / 1e24 - v.storage_usage * STORAGE_NEAR_PER_BYTE;
+    },
+  });
 }
 
 /** NEAR_RPC_URL may list several endpoints, comma-separated. */

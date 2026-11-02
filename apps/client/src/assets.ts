@@ -1,4 +1,5 @@
 import type { ItemId, NpcId } from '@hearth/economy';
+import { ART, FALLBACK_ICON } from './fallbackArt.ts';
 
 /**
  * Every Cute Fantasy file the game uses, relative to the pack root.
@@ -83,6 +84,10 @@ export const ICONS: Record<ItemId | 'gold', [string, number, number]> = {
 };
 
 export function icon(id: ItemId | 'gold', size = 18): string {
+  if (!ART.ok) {
+    const [bg, letter] = FALLBACK_ICON[id];
+    return `<i class="ico" style="display:inline-block;width:${size}px;height:${size}px;border-radius:50%;background:${bg};color:#1b1e2b;font:700 ${Math.round(size * 0.6)}px/${size}px sans-serif;text-align:center;font-style:normal;vertical-align:-4px">${letter}</i>`;
+  }
   return `<i class="ico" style="${iconStyleFixed(id, size)}"></i>`;
 }
 

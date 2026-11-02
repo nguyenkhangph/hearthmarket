@@ -6,7 +6,7 @@ const num = (v: string | undefined, d: number) => (v !== undefined && v !== '' &
 
 export const config = {
   port: num(env.PORT, 8787),
-  secondsPerGameHour: num(env.SECONDS_PER_GAME_HOUR, 2.5),
+  secondsPerGameHour: num(env.SECONDS_PER_GAME_HOUR, 5),
   seed: num(env.SEED, 42),
   worldSource: (env.WORLD_SOURCE || 'replay') as 'synthetic' | 'replay' | 'open-meteo',
   worldReplayFile: env.WORLD_REPLAY_FILE || 'data/world/replay-kansas-heatwave.json',
@@ -37,8 +37,18 @@ export const config = {
     oracleAccount: env.ORACLE_ACCOUNT ?? '',
     oracleKey: env.ORACLE_KEY ?? '',
     /** real seconds between two on-chain day starts (reconcile + world post) */
-    daySeconds: num(env.CHAIN_DAY_SECONDS, 50),
-    maxTxPerMinute: num(env.CHAIN_MAX_TX_PER_MINUTE, 40),
+    daySeconds: num(env.CHAIN_DAY_SECONDS, 600),
+    maxTxPerMinute: num(env.CHAIN_MAX_TX_PER_MINUTE, 20),
+    /** gas budget: on-chain calls per NPC per real hour (0 = no cap); order fills and player relays are never capped */
+    npcTxPerHour: num(env.CHAIN_NPC_TX_PER_HOUR, 20),
+    /** one `produce` per NPC and item per game day instead of one per production tick */
+    batchProduce: env.CHAIN_BATCH_PRODUCE !== '0',
+    /** stop mirroring NPC actions this many seconds after the last player leaves (0 = never pause) */
+    idleSeconds: num(env.CHAIN_IDLE_SECONDS, 120),
+    /** log a warning when a signing account has less than this much spendable NEAR */
+    lowBalanceNear: num(env.CHAIN_LOW_BALANCE_NEAR, 0.1),
+    /** red-team attacks sent to the contract on chain (failed txs as proof), per hour, all players */
+    redTeamProofsPerHour: num(env.CHAIN_REDTEAM_PROOFS_PER_HOUR, 12),
   },
 
   auth: {

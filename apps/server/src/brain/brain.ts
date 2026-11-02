@@ -56,7 +56,14 @@ export class NpcBrain {
       { role: 'system', content: this.systemPrompt(v, npc) },
       { role: 'user', content: `<player_message>${message.slice(0, 600)}</player_message>` },
     ];
-    const raw = await this.llm.complete(messages);
+    let raw: string;
+    try {
+      raw = await this.llm.complete(messages);
+    } catch (e) {
+      // the model is down or out of credits: the village keeps working on the rule brain
+      const r = this.rules(v, npc, message);
+      return { ...r, brain: `rules (${this.llm.name} unavailable: ${(e as Error).message.slice(0, 60)})` };
+    }
     return { ...parseProposal(raw), brain: this.llm.name };
   }
 

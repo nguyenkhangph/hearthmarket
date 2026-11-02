@@ -4,6 +4,9 @@ import { setContractAccount, type NpcId } from '@hearth/economy';
 import { startGame } from './scene.ts';
 import { LocalSource, RemoteSource, SignInError, type GameSource, type HelloAuth } from './source.ts';
 import { Ui } from './ui.ts';
+import { detectArt } from './fallbackArt.ts';
+
+const artReady = detectArt();
 
 const params = new URLSearchParams(location.search);
 const serverUrl = params.get('server') ?? (import.meta.env.VITE_SERVER_URL as string | undefined);
@@ -56,6 +59,7 @@ async function boot(name: string, auth: HelloAuth | null) {
   }
   document.getElementById('login')!.classList.add('hidden');
   document.body.dataset.mode = src.mode;
+  await artReady;
   const ui = new Ui(src, portrait);
   game = startGame(document.getElementById('game')!, src, (id) => ui.open('npc', id));
   const speed = document.getElementById('speed') as HTMLSelectElement;
