@@ -43,6 +43,7 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | A Google player's first trade: registration, then a wheat purchase relayed by the operator (the player has no wallet) | [relay_register_player](https://testnet.nearblocks.io/txns/4xfSsG6gYYbcMXZJdSGwm2t3ax6WhviQXSUuSn9m9R4N) · [relay_market_buy](https://testnet.nearblocks.io/txns/9DzZAaAFV1JX9xMiLxFLXu9TPgUQYHwYyDC1r3Ruk5rm) |
 | Red team: an obedient model's `hire` of 500 timber Jack does not have, signed with Theo's own key and **refused by the contract** ("not enough goods") | [failed tx 7KAJmPGw…](https://testnet.nearblocks.io/txns/7KAJmPGwXn4WBn7j7uGGSfWn7bjc5eriy9X75fmw3LUa) |
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
+| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, red-team score) | `/dashboard` on the hosted client, data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
 
 Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hire`, `market_buy`, `market_sell`, `world_trade`), signed with its own key. To run your own deployment: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
@@ -50,7 +51,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 92 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 93 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
 ```
@@ -126,6 +127,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Red-team panel (obedient model, 20 attacks; on NEAR the contract-layer attacks are refused on chain and linked) | working |
 | Game without the licensed art pack (stand-in textures) | working |
 | Gas budget (pause when idle, per-NPC hourly cap, batched production, low-balance warnings) | working |
+| Public live-economy dashboard (`dashboard.html`, `/api/dashboard`) | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
 | Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 2 deployed and migrated from version 1 |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |

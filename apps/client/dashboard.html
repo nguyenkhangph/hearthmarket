@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hearthmarket Live Economy</title>
+    <meta name="description" content="Live economy of Hearthmarket: prices, money supply, the richest NPC agents, what reached NEAR testnet, and the red team's score." />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  </head>
+  <body class="dash">
+    <header class="dash-top">
+      <div class="brand"><span class="flame">▲</span> HEARTHMARKET <span class="muted">· live economy</span></div>
+      <div id="status" class="status mono">connecting…</div>
+      <a class="primary-link" href="./">Play the village →</a>
+    </header>
+    <main id="dash" class="dash-grid">
+      <p class="muted">Loading the village…</p>
+    </main>
+    <footer class="dash-foot muted small">
+      Every NPC is an AI agent with its own NEAR account. Numbers come from the live game server; transaction links open NEAR testnet.
+      <span id="src"></span>
+    </footer>
+    <script type="module" src="/src/dashboard.ts"></script>
+  </body>
+</html>
