@@ -11,6 +11,7 @@ import { config } from './config.ts';
 import { Game } from './game.ts';
 import { NpcBrain } from './brain/brain.ts';
 import { DayPlanner } from './brain/planner.ts';
+import { Negotiator } from './brain/negotiator.ts';
 import { OpenAiCompatible, WithFallback } from './brain/llm.ts';
 import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
 import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
@@ -70,6 +71,8 @@ if (config.brain === 'llm' && !llmOn) log('NPC_BRAIN=llm but NEAR_AI_API_KEY or 
 const llm = llmOn ? new WithFallback(new OpenAiCompatible(primary), fallback.baseUrl ? new OpenAiCompatible(fallback) : undefined) : null;
 const brain = new NpcBrain(llm);
 const planner = llm ? new DayPlanner(brain, { everyMs: config.planEveryMinutes * 60_000, log }) : undefined;
+// agent-to-agent deals: the model when configured (every NPC_DEAL_MINUTES per pair), rules otherwise (daily)
+const negotiator = new Negotiator(llm, { everyMs: config.dealEveryMinutes * 60_000, log });
 
 // ---------------------------------------------------------------- players
 let secret = config.auth.playerKeySecret;
@@ -135,7 +138,10 @@ function onPresence(players: number) {
 }
 
 const game = new Game(
-  { seed: config.seed, world, mirror, worldPost: currentWorldPost, onNewDay: (v) => planner?.onNewDay(v) },
+  { seed: config.seed, world, mirror, worldPost: currentWorldPost, onNewDay: (v) => {
+    planner?.onNewDay(v);
+    void negotiator.onNewDay(v);
+  } },
   brain, signer, chain,
 );
 // sync the chain to the engine right away, not only at the next game day
@@ -159,6 +165,7 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true, day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
       chainStats: mirror ? { ...mirror.stats, active: mirror.isActive, balances: mirror.balances } : undefined, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
+      deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures },
     }));
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));

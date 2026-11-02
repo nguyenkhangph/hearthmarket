@@ -1,5 +1,6 @@
 import type { ItemId, NpcId, QuestId, GuildStrategy } from './defs.ts';
 import type { NpcPlan } from './plan.ts';
+import type { Deal } from './deals.ts';
 import type { Gold } from './money.ts';
 
 export type Inventory = Record<ItemId, number>;
@@ -189,6 +190,8 @@ export interface VillageState {
   txs: TxRecord[];
   nextId: number;
   dailyStats: DailyStats[];
+  /** today's (and recent) deals negotiated between NPC agents, newest last */
+  deals?: Deal[];
   lastSeasonResult?: { season: number; ranking: { guild: string; score: number; reward: Gold }[] };
 }
 

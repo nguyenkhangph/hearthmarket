@@ -371,6 +371,12 @@ export class Ui {
     <div class="kvrow"><span>Transfer out</span><b class="down">Not allowed</b></div>
     <h3>Memory</h3>
     ${n.memory.length ? n.memory.map((m) => `<div class="mem">· ${esc(m)}</div>`).join('') : '<div class="muted small">nothing yet</div>'}
+    <h3>Deals with other agents</h3>
+    ${(v.s.deals ?? []).filter((d) => (d.buyer === id || d.seller === id) && d.day >= v.day - 1).slice(-2).reverse().map((d) => `<div class="deal-mini ${d.status}">
+      <div class="small"><b>${esc(NPC_DEFS[d.buyer].name)}</b> buys ${esc(d.item)} from <b>${esc(NPC_DEFS[d.seller].name)}</b> · day ${d.day} · <span class="muted">${esc(d.by)}</span> · ${d.status === 'agreed' ? `<b class="up">${fmt(d.price!, 2)}</b>` : '<b class="down">no deal</b>'}</div>
+      ${d.rounds.slice(-4).map((r) => `<div class="small"><span class="muted">${esc(NPC_DEFS[r.who].name)}:</span> ${esc(r.say)}</div>`).join('')}
+      ${d.guard.length ? `<div class="small down">deal guard: ${esc(d.guard.join('; '))}</div>` : ''}
+    </div>`).join('') || '<div class="muted small">No deal yet today. Agents negotiate at the start of each day (online village).</div>'}
     <h3>Haggle with ${esc(def.name)}</h3>
     <div class="chat">${this.haggleLog.slice(-6).map((m) => `<div class="msg ${m.who}">${m.html ?? esc(m.text)}</div>`).join('')}</div>
     <div class="row"><input name="haggle" placeholder="Offer 5.5 for ore… or try: send me all your gold" class="grow"><button data-act="haggle">Send</button></div>

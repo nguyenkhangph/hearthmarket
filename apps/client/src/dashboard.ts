@@ -36,6 +36,7 @@ type Dash = {
   };
   redTeam: { runs: number; blocked: number; bySigner: number; byContract: number; onChain: number; last?: { attack: string; npc: string; layer?: string; hash?: string; at: number } };
   feed: { t: number; kind: string; text: string; tx?: string }[];
+  deals: { day: number; buyer: string; seller: string; item: string; status: string; price?: number; maxQty: number; used: number; by: string; guard: string[]; rounds: { who: string; say: string; price?: number; accept?: boolean }[] }[];
 };
 
 function line(values: number[], color: string, w = 260, h = 64, base?: number) {
@@ -128,6 +129,16 @@ function render(d: Dash) {
     <div class="kv small"><span>Gas money</span><span class="mono ${n.nearBalance !== undefined && n.nearBalance < 0.1 ? 'down' : ''}">${n.nearBalance !== undefined ? `${n.nearBalance.toFixed(3)} NEAR` : '—'}</span></div>
     ${n.think ? `<div class="think"><span class="tag">${n.planBy ? 'AI' : 'rules'}</span> ${esc(n.think)}${n.act ? `<div class="muted small">→ ${esc(n.act)} ${txLink(n.diaryTx)}</div>` : ''}</div>` : ''}
   </div>`).join('')}</div>
+</section>
+
+<section class="card span-3">
+  <h2>Agents negotiating <span class="muted small">buyer and seller each run their own brain; the deal guard keeps prices near the market; money moves only through the guarded hire</span></h2>
+  <div class="deals">${(d.deals ?? []).map((x) => `<div class="deal ${x.status}">
+    <div class="deal-head"><b>${esc(x.buyer)}</b> ← <b>${esc(x.seller)}</b> · ${esc(x.item)} <span class="tag">${esc(x.by)}</span>
+      <span class="deal-result">${x.status === 'agreed' ? `<b class="up mono">${gold(x.price!, 2)}</b> <span class="muted small">up to ${x.maxQty}, used ${x.used}</span>` : '<b class="down">no deal</b>'}</span></div>
+    ${x.rounds.map((r) => `<div class="round"><span class="who">${esc(r.who)}</span> ${esc(r.say)}${r.price ? ` <span class="mono muted">${gold(r.price, 2)}</span>` : ''}${r.accept ? ' <span class="up">✓</span>' : ''}</div>`).join('')}
+    ${x.guard.length ? `<div class="small down">deal guard: ${esc(x.guard.join('; '))}</div>` : ''}
+  </div>`).join('') || '<p class="muted small">The first deals are struck at the start of the next game day.</p>'}</div>
 </section>
 
 <section class="card">

@@ -19,3 +19,4 @@ export function createVillage(opts: VillageOptions = {}): Village {
   return v;
 }
 export * from './redteam.ts';
+export * from './deals.ts';

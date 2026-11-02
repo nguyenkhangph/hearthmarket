@@ -90,6 +90,11 @@ export function dashboardView(v: Village, x: DashboardExtras) {
       ? { stats: x.mirror.stats, byMethod: x.mirror.byMethod, events, balances: x.mirror.balances }
       : undefined,
     redTeam: x.redTeam,
+    deals: (s.deals ?? []).slice(-6).reverse().map((d) => ({
+      day: d.day, buyer: NPC_DEFS[d.buyer].name, seller: NPC_DEFS[d.seller].name, item: d.item, status: d.status,
+      price: d.price, maxQty: d.maxQty, used: d.used, by: d.by, guard: d.guard,
+      rounds: d.rounds.map((r) => ({ who: NPC_DEFS[r.who].name, say: r.say, price: r.price, accept: r.accept })),
+    })),
     feed: s.feed.slice(-12).reverse().map((e) => ({ t: e.t, kind: e.kind, text: e.text, tx: e.tx && txKind(e.tx) === 'chain' ? e.tx : undefined })),
   };
 }

@@ -16,6 +16,8 @@ export const config = {
   brain: (env.NPC_BRAIN || 'off') as 'off' | 'llm',
   /** minutes between two day plans for the same NPC (token budget) */
   planEveryMinutes: num(env.NPC_PLAN_MINUTES, 5),
+  /** minutes between two LLM negotiations of the same buyer/seller pair (rules negotiate daily) */
+  dealEveryMinutes: num(env.NPC_DEAL_MINUTES, 10),
   llm: {
     primary: {
       baseUrl: env.NEAR_AI_BASE_URL || NEAR_AI_DEFAULT_BASE_URL,
