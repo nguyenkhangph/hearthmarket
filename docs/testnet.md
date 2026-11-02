@@ -177,7 +177,7 @@ Every on-chain call burns a little testnet NEAR from the account that signs it: 
 
 | Setting (`.env`) | Default | What it does |
 | --- | --- | --- |
-| `CHAIN_IDLE_SECONDS` | 120 | Nobody online for this long: NPC actions stay in the engine, nothing is sent. The first player back triggers a fresh `reconcile`. |
+| `CHAIN_IDLE_SECONDS` | 120 | Nobody playing (and nobody refreshing the dashboard in the last minute) for this long: NPC actions stay in the engine, nothing is sent, and the agents use rules instead of the model. The first player or dashboard viewer back triggers a fresh `reconcile`. |
 | `CHAIN_NPC_TX_PER_HOUR` | 20 | Calls per NPC per real hour. Order fills and player relays are never capped (they move escrow). Skipped actions stay in the engine; `reconcile` re-anchors balances. |
 | `CHAIN_BATCH_PRODUCE` | 1 | A day of production goes on chain as one `produce` per NPC and item. |
 | `CHAIN_DAY_SECONDS` | 600 | Real seconds between two day syncs (`reconcile` + `post_world_data`). |

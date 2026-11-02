@@ -77,7 +77,11 @@ const brain = new NpcBrain(llm);
 const planner = llm ? new DayPlanner(brain, { everyMs: config.planEveryMinutes * 60_000, log }) : undefined;
 // agent-to-agent deals: the model when configured (every NPC_DEAL_MINUTES per pair), rules otherwise (daily)
 // model calls cost credits: only while someone is playing (rules are free and run regardless)
-const someoneOnline = () => sessions.size > 0;
+// a dashboard viewer counts as someone watching for a minute after each refresh (judges often
+// open the dashboard without playing): the agents think with the model and act on chain for them
+let lastViewerAt = 0;
+const watchers = () => sessions.size + (Date.now() - lastViewerAt < 60_000 ? 1 : 0);
+const someoneOnline = () => watchers() > 0;
 const negotiator = new Negotiator(llm, { everyMs: config.dealEveryMinutes * 60_000, log, useModel: someoneOnline });
 
 // ---------------------------------------------------------------- players
@@ -131,7 +135,7 @@ function onPresence(players: number) {
     idleTimer = undefined;
     if (!mirror.isActive) {
       mirror.setActive(true);
-      log('chain: a player is back, NPC actions go on chain again');
+      log('chain: someone is playing or watching the dashboard, NPC actions go on chain again');
       mirror.startDay(game.village, currentWorldPost());
     }
   } else if (mirror.isActive && !idleTimer) {
@@ -168,6 +172,8 @@ if (config.worldFx === 'near-intents') {
 // sync the chain to the engine right away, not only at the next game day
 mirror?.startDay(game.village, currentWorldPost());
 onPresence(0);
+// dashboard viewers leave without a goodbye: re-check presence every 30 s
+setInterval(() => onPresence(watchers()), 30_000).unref();
 log(`world=${config.worldSource} brain=${brain.name} chain=${chain.kind} contract=${config.near.contract} login=${google ? 'google' : ''}${config.auth.devLogin ? (google ? '+dev' : 'dev') : ''}`);
 
 // ---------------------------------------------------------------- transport
@@ -191,6 +197,8 @@ const http = createServer((req, res) => {
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));
   } else if (req.url === '/api/dashboard') {
+    lastViewerAt = Date.now();
+    onPresence(watchers());
     res.setHeader('cache-control', 'no-store');
     res.end(JSON.stringify(dashboardView(v, { online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt })));
   } else if (req.url === '/api/state') {
@@ -215,7 +223,7 @@ wss.on('connection', (ws) => {
       try {
         const s = await authenticate(msg.auth, { playerId: msg.playerId, name: msg.name }, authCfg, google);
         sessions.set(ws, s);
-        onPresence(sessions.size);
+        onPresence(watchers());
         accounts.set(s.playerId, s.account);
         game.join(s.playerId, s.name);
         ws.send(JSON.stringify({ type: 'welcome', playerId: s.playerId, name: s.name, account: s.account, auth: s.auth, contract: config.near.contract, chain: chain.kind }));
@@ -270,7 +278,7 @@ wss.on('connection', (ws) => {
   });
   ws.on('close', () => {
     sessions.delete(ws);
-    onPresence(sessions.size);
+    onPresence(watchers());
   });
 });
 
