@@ -9,6 +9,7 @@ import {
 } from './market.ts';
 import { checkNpcAction } from './policy.ts';
 import { checkPlan, describePlan, type NpcPlan } from './plan.ts';
+import type { WorldFx } from './types.ts';
 import { checkDeal, describeDeal, DEAL_BAND, DEAL_MAX_ROUNDS, type Deal, type DealRound } from './deals.ts';
 import { applyWorldDay, initialWorld, SyntheticWorld, type WorldDay } from './world.ts';
 import type {
@@ -515,6 +516,23 @@ export class Village {
     });
     seller.memory = [`${NPC_DEFS[buyer.id].name} paid ${fmt(price)} per ${item} on day ${this.day}`, ...seller.memory].slice(0, 5);
     return avail;
+  }
+
+  // ---------------------------------------------------------------- world exchange rate
+  /**
+   * A real-market exchange rate for world prices (the server reads it from NEAR Intents).
+   * The factor is clamped to 0.9-1.1 so an outside quote can nudge the world, never upend it.
+   */
+  setWorldFx(input: { factor: number; quote: string; source: string; at: string }): WorldFx {
+    const factor = Math.round(clamp(Number.isFinite(input.factor) ? input.factor : 1, 0.9, 1.1) * 1000) / 1000;
+    const w = this.s.world;
+    const old = w.fx?.factor ?? 1;
+    for (const i of ITEMS) if (w.price[i]) w.price[i] = Math.round((w.price[i]! / old) * factor);
+    w.fx = { factor, quote: input.quote.slice(0, 80), source: input.source.slice(0, 120), at: input.at };
+    if (Math.abs(factor - old) >= 0.001) {
+      this.feed('world', `World money: ${w.fx.quote} via ${w.fx.source} · world goods ×${factor.toFixed(3)} in village gold`);
+    }
+    return w.fx;
   }
 
   // ---------------------------------------------------------------- agent deals

@@ -82,6 +82,7 @@ export function dashboardView(v: Village, x: DashboardExtras) {
       prices: Object.fromEntries(ITEMS.filter((i) => ITEM_DEFS[i].world).map((i) => [i, s.world.price[i]])),
       shippingBps: s.world.shippingBps,
       source: s.world.source,
+      fx: s.world.fx,
     },
     npcs,
     guilds: Object.values(s.guilds).map((g) => ({ name: g.name, members: g.members.length, fund: g.fund, ai: !!g.ai })).sort((p, q) => q.fund - p.fund),

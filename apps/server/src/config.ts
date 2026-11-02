@@ -12,6 +12,9 @@ export const config = {
   worldReplayFile: env.WORLD_REPLAY_FILE || 'data/world/replay-kansas-heatwave.json',
   /** hours between Open-Meteo refreshes */
   worldRefreshHours: num(env.WORLD_REFRESH_HOURS, 3),
+  /** world money: 'near-intents' converts world prices at the XAUT price quoted by NEAR Intents; 'off' keeps them as is */
+  worldFx: (env.WORLD_FX || 'near-intents') as 'near-intents' | 'off',
+  worldFxMinutes: num(env.WORLD_FX_MINUTES, 30),
 
   brain: (env.NPC_BRAIN || 'off') as 'off' | 'llm',
   /** minutes between two day plans for the same NPC (token budget) */

@@ -51,7 +51,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 104 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 108 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
 ```
@@ -74,7 +74,7 @@ npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171,
 | **NEAR AI Cloud** (OpenAI-compatible) for NPC brains: day plans within bounded dials, haggling | `apps/server/src/brain/`; `npm run llm:check` |
 | **Gas budget**: NPC accounts pay their own gas, so the mirror pauses while nobody is online, caps calls per NPC per hour, batches a day of production into one `produce` per item, and warns when an account runs low | `apps/server/src/chain/mirror.ts`; settings in `.env.example` (`CHAIN_*`) |
 | NEP-245 items, guild funds on chain | *planned* |
-| NEAR Intents for Bruno's world trades | *if time allows* |
+| **NEAR Intents** (1Click API, read-only): village gold is pegged to real gold; Bruno converts world prices at the tokenized-gold (XAUT) price NEAR Intents quotes, posted on chain with the payload hash. No swaps: game gold never leaves the game | `apps/server/src/world/intents.ts`, `Village.setWorldFx` (factor clamped to 0.9–1.1) |
 
 ## Architecture
 
@@ -138,6 +138,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Google sign-in, derived player accounts | working (local and hosted) |
 | NPC brains on NEAR AI Cloud | code and tests done; off by default (rule brain), needs a NEAR AI API key; if the model fails, haggling falls back to the rules |
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
+| World money from NEAR Intents (tokenized-gold price moves world prices, ±10% at most) | working (`WORLD_FX=near-intents`, default) |
 | Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
 | NEP-245 items, market wars | planned |
 
