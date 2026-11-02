@@ -515,7 +515,7 @@ fn migrate_keeps_version_1_balances_and_orders() {
     };
     env::state_write(&v1);
     let c = Hearth::migrate();
-    assert_eq!(c.get_version(), "2");
+    assert_eq!(c.get_version(), "3");
     assert_eq!(bal(&c, "mike.hearth.testnet"), 7_777);
     assert_eq!(c.get_npc(acc("mike.hearth.testnet")).unwrap().spent_today, 5_900);
     assert_eq!(c.get_open_orders().len(), 1);
@@ -528,4 +528,67 @@ fn items_use_lowercase_json() {
     assert_eq!(near_sdk::serde_json::to_string(&Item::Ore).unwrap(), "\"ore\"");
     let i: Item = near_sdk::serde_json::from_str("\"sword\"").unwrap();
     assert_eq!(i, Item::Sword);
+}
+
+// ---------------------------------------------------------------------- NEP-245 goods
+fn mt(c: &Hearth, who: &str, t: &str) -> u128 {
+    c.mt_balance_of(acc(who), t.into()).0
+}
+
+#[test]
+fn goods_are_multi_tokens_with_events() {
+    let mut c = setup();
+    as_caller("mike.hearth.testnet");
+    c.produce(Item::Ore, 7);
+    assert_eq!(mt(&c, "mike.hearth.testnet", "ore"), 7);
+    assert!(get_logs().iter().any(|l| l.contains("\"standard\":\"nep245\"") && l.contains("\"event\":\"mt_mint\"") && l.contains("\"amounts\":[\"7\"]")));
+    assert_eq!(c.mt_batch_balance_of(acc("mike.hearth.testnet"), vec!["ore".into(), "sword".into()]), vec![U128(7), U128(0)]);
+    assert_eq!(c.mt_supply("ore".into()), None);
+    assert!(c.mt_token(vec!["sword".into(), "gold".into()])[1].is_none());
+    assert_eq!(c.mt_metadata_contract()["spec"], "mt-1.0.0");
+}
+
+#[test]
+fn players_move_goods_with_one_yocto() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    c.reconcile(1, vec![], None, vec![], vec![(acc("khang.testnet"), Item::Sword, 3)]);
+    as_caller_yocto("khang.testnet");
+    c.mt_transfer(acc("mallory.testnet"), "sword".into(), U128(2), None, Some("gift".into()));
+    assert_eq!(mt(&c, "khang.testnet", "sword"), 1);
+    assert_eq!(mt(&c, "mallory.testnet", "sword"), 2);
+    assert!(get_logs().iter().any(|l| l.contains("\"event\":\"mt_transfer\"") && l.contains("\"memo\":\"gift\"")));
+}
+
+#[test]
+#[should_panic(expected = "NPC accounts cannot transfer goods")]
+fn npcs_cannot_move_goods() {
+    let mut c = setup();
+    as_caller("mike.hearth.testnet");
+    c.produce(Item::Ore, 5);
+    as_caller_yocto("mike.hearth.testnet");
+    c.mt_transfer(acc("mallory.testnet"), "ore".into(), U128(5), None, None);
+}
+
+#[test]
+#[should_panic(expected = "Requires attached deposit of exactly 1 yoctoNEAR")]
+fn goods_transfer_needs_one_yocto() {
+    let mut c = setup();
+    as_caller("khang.testnet");
+    c.mt_transfer(acc("mallory.testnet"), "ore".into(), U128(1), None, None);
+}
+
+#[test]
+#[should_panic(expected = "not enough goods")]
+fn cannot_move_goods_you_do_not_have() {
+    let mut c = setup();
+    as_caller_yocto("khang.testnet");
+    c.mt_batch_transfer(acc("mallory.testnet"), vec!["ore".into()], vec![U128(3)], None, None);
+}
+
+#[test]
+#[should_panic(expected = "unknown token_id")]
+fn unknown_goods_are_refused() {
+    let c = setup();
+    c.mt_balance_of(acc("khang.testnet"), "gold".into());
 }

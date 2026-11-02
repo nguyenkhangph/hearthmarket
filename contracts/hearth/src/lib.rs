@@ -67,6 +67,20 @@ impl Item {
     fn idx(self) -> usize {
         Item::ALL.iter().position(|i| *i == self).unwrap()
     }
+    /// NEP-245 token id: the item's name, as in the TypeScript engine ("ore", "sword", ...).
+    pub fn token_id(self) -> &'static str {
+        match self {
+            Item::Ore => "ore",
+            Item::Timber => "timber",
+            Item::Wheat => "wheat",
+            Item::Bread => "bread",
+            Item::Tools => "tools",
+            Item::Sword => "sword",
+        }
+    }
+    pub fn from_token_id(id: &str) -> Option<Item> {
+        Item::ALL.into_iter().find(|i| i.token_id() == id)
+    }
     /// Crafting recipe (inputs per craft) and units per craft — identical to RECIPES/RECIPE_YIELD in defs.ts.
     pub fn recipe(self) -> Option<(&'static [(Item, u32)], u32)> {
         match self {
@@ -402,7 +416,8 @@ impl Hearth {
     }
 
     pub fn get_version(&self) -> String {
-        "2".into()
+        // 3: NEP-245 views, transfers and events for items; same stored state as 2 (no migrate)
+        "3".into()
     }
 
     // ------------------------------------------------------------------ roles
@@ -514,6 +529,12 @@ impl Hearth {
         let cur = self.item_of(who, item) as i64 + qty;
         require!(cur >= 0, "not enough goods");
         self.items.insert((who.clone(), item), cur as u32);
+        // NEP-245: goods appear (produce, craft output, market buy) or disappear (inputs, sales)
+        if qty > 0 {
+            emit("nep245", "1.0.0", "mt_mint", json!({ "owner_id": who, "token_ids": [item.token_id()], "amounts": [qty.to_string()] }));
+        } else if qty < 0 {
+            emit("nep245", "1.0.0", "mt_burn", json!({ "owner_id": who, "token_ids": [item.token_id()], "amounts": [(-qty).to_string()] }));
+        }
     }
     fn transfer_gold(&mut self, sender: &AccountId, receiver: &AccountId, amount: Gold, memo: Option<String>) {
         require!(amount > 0, "amount must be positive");
@@ -1043,6 +1064,78 @@ impl Hearth {
             },
             approved_account_ids: Some(Default::default()),
         })
+    }
+
+    // ------------------------------------------------------------------ NEP-245 items
+    // Goods (ore, timber, wheat, bread, tools, sword) as multi-tokens. Balances are the
+    // same stored inventory the game uses. Players can move their goods; NPCs cannot, the
+    // same rule as gold. Not implemented: approvals and `mt_transfer_call`. Supply is not
+    // tracked on chain (the daily `reconcile` re-anchors balances), so `mt_supply` is None.
+
+    fn mt_item(token_id: &str) -> Item {
+        Item::from_token_id(token_id).unwrap_or_else(|| env::panic_str("unknown token_id"))
+    }
+
+    pub fn mt_balance_of(&self, account_id: AccountId, token_id: String) -> U128 {
+        U128(self.item_of(&account_id, Self::mt_item(&token_id)) as u128)
+    }
+
+    pub fn mt_batch_balance_of(&self, account_id: AccountId, token_ids: Vec<String>) -> Vec<U128> {
+        token_ids.iter().map(|t| U128(self.item_of(&account_id, Self::mt_item(t)) as u128)).collect()
+    }
+
+    pub fn mt_supply(&self, token_id: String) -> Option<U128> {
+        Self::mt_item(&token_id);
+        None
+    }
+
+    pub fn mt_batch_supply(&self, token_ids: Vec<String>) -> Vec<Option<U128>> {
+        token_ids.iter().map(|t| {
+            Self::mt_item(t);
+            None
+        }).collect()
+    }
+
+    pub fn mt_token(&self, token_ids: Vec<String>) -> Vec<Option<serde_json::Value>> {
+        token_ids
+            .iter()
+            .map(|t| Item::from_token_id(t).map(|i| json!({ "token_id": i.token_id(), "owner_id": null, "metadata": { "title": i.token_id(), "description": "Hearthmarket goods" } })))
+            .collect()
+    }
+
+    pub fn mt_metadata_contract(&self) -> serde_json::Value {
+        json!({ "spec": "mt-1.0.0", "name": "Hearthmarket Goods", "symbol": "HGOODS", "icon": null, "base_uri": null, "reference": null, "reference_hash": null })
+    }
+
+    /// Players move goods to anyone. One yoctoNEAR, as NEP-245 requires. NPCs never can.
+    #[payable]
+    pub fn mt_transfer(&mut self, receiver_id: AccountId, token_id: String, amount: U128, approval: Option<(AccountId, u64)>, memo: Option<String>) {
+        self.mt_batch_transfer(receiver_id, vec![token_id], vec![amount], approval.map(|a| vec![Some(a)]), memo);
+    }
+
+    #[payable]
+    pub fn mt_batch_transfer(&mut self, receiver_id: AccountId, token_ids: Vec<String>, amounts: Vec<U128>, approvals: Option<Vec<Option<(AccountId, u64)>>>, memo: Option<String>) {
+        near_sdk::assert_one_yocto();
+        let sender = env::predecessor_account_id();
+        require!(!self.npcs.contains_key(&sender), "NPC accounts cannot transfer goods");
+        require!(approvals.map(|a| a.iter().all(|x| x.is_none())).unwrap_or(true), "approvals are not supported");
+        require!(sender != receiver_id, "sender and receiver are the same");
+        require!(!token_ids.is_empty() && token_ids.len() == amounts.len() && token_ids.len() <= 6, "token_ids and amounts must match (1-6)");
+        for (t, a) in token_ids.iter().zip(amounts.iter()) {
+            let item = Self::mt_item(t);
+            require!(a.0 > 0 && a.0 <= MAX_QTY as u128, "invalid amount");
+            let q = a.0 as i64;
+            // move without mint/burn events: this is a transfer
+            let from = self.item_of(&sender, item) as i64 - q;
+            require!(from >= 0, "not enough goods");
+            self.items.insert((sender.clone(), item), from as u32);
+            let to = self.item_of(&receiver_id, item) as i64 + q;
+            self.items.insert((receiver_id.clone(), item), to as u32);
+        }
+        emit("nep245", "1.0.0", "mt_transfer", json!({
+            "old_owner_id": sender, "new_owner_id": receiver_id, "token_ids": token_ids,
+            "amounts": amounts.iter().map(|a| a.0.to_string()).collect::<Vec<_>>(), "memo": memo
+        }));
     }
 
     pub fn nft_metadata(&self) -> NftContractMetadata {

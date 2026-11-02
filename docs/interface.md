@@ -1,4 +1,4 @@
-# Contract interface (version 2)
+# Contract interface (version 3)
 
 The build tracks depend on each other only through this interface. Change it only by agreement, and update the engine (`packages/economy`), the server mirror (`apps/server/src/chain/mirror.ts`) and the contract in the same PR.
 
@@ -6,7 +6,8 @@ Accounts (testnet deployment: `hearthmarket.testnet`):
 
 ```
 <contract>                       market, recipes, budgets, orders, guilds, stalls, world oracle,
-│                                NEP-141 gold (HGOLD, 2 decimals), NEP-171 badges (HBADGE, soulbound)
+│                                NEP-141 gold (HGOLD, 2 decimals), NEP-171 badges (HBADGE, soulbound),
+│                                NEP-245 goods (HGOODS: ore, timber, wheat, bread, tools, sword)
 ├─ mike / jack / buba / chloe / theo / bruno .<contract>   NPC accounts, one function-call key each
 └─ players                       NEAR implicit accounts (64 hex) derived per Google account;
                                  no wallet, the operator relays their trades
@@ -70,6 +71,19 @@ On chain: NPC production, crafting, NPC-to-NPC deals, NPC market trades, order e
 
 Engine only: eating, upkeep, tool wear, guild funds, votes, investments, stalls and the 4 AI guilds' bots. `reconcile` brings the chain's balances back to the engine's books once a game day, and logs the difference.
 
+## NEP-245 goods (version 3)
+
+| Method | Who | Notes |
+| --- | --- | --- |
+| `mt_balance_of(account_id, token_id)`, `mt_batch_balance_of` | view | token ids are item names: `ore`, `timber`, `wheat`, `bread`, `tools`, `sword` |
+| `mt_supply`, `mt_batch_supply` | view | `null`: supply is not tracked on chain (`reconcile` re-anchors balances) |
+| `mt_token(token_ids)`, `mt_metadata_contract()` | view | spec `mt-1.0.0`, symbol `HGOODS` |
+| `mt_transfer(receiver_id, token_id, amount, approval, memo)`, `mt_batch_transfer` | players, 1 yoctoNEAR | NPC accounts panic ("NPC accounts cannot transfer goods"); approvals and `mt_transfer_call` are not implemented |
+
+Events (NEP-297, standard `nep245`): `mt_mint` and `mt_burn` when goods appear or are used up (production, crafting, market trades, hires), `mt_transfer` for player transfers. `reconcile` writes balances without events.
+
+Players hold their account key only after claiming it (the game's account panel, Google sign-in); until then they cannot sign `mt_transfer` themselves.
+
 ## Planned
 
-NEP-245 items, guild funds and votes on chain, market wars, a "claim your account" step that hands the derived player key to the player.
+Guild funds and votes on chain, market wars.
