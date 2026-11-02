@@ -1,14 +1,21 @@
 # Hearthmarket
 
-A pixel-art village where every NPC is an AI agent with its own NEAR account. Real weather in five producing regions moves world prices; Bruno the merchant carries those prices into the village; guilds pool gold, back NPCs and compete on returns. Players sign in with Google and never see a wallet.
+A pixel-art village where every NPC is an AI agent with its own NEAR account. The agents run their own businesses: they negotiate prices with each other, hire each other and fill player orders, and every deal is a transaction signed by the agent's own key, inside limits the agent cannot break. Real weather in five producing regions moves world prices, and the price of real (tokenized) gold, read from NEAR Intents, sets what village gold is worth. Players sign in with Google, never see a wallet, and can claim their NEAR account whenever they like.
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
-> Status, 2 Nov 2026: the contract (version 2) runs on NEAR testnet at `hearthmarket.testnet`, and the game server mirrors NPC actions, player trades and daily world data to it. NPC brains run on fixed rules by default; NEAR AI Cloud day plans turn on with an API key (`NPC_BRAIN=llm`). The **Status** table at the bottom says what runs today and what is still in progress.
+> Status, 3 Nov 2026: the contract runs on NEAR testnet at `hearthmarket.testnet` (version 2 live; version 3 adds NEP-245 goods), and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
 
 ## The problem
 
 Game economies usually die in one of two ways: a developer has to keep patching prices, or a token is pumped in and the game becomes a chart. Hearthmarket tries a third way: NPCs are agents that produce, eat, haggle and hire each other within hard on-chain limits; the world outside sets the baseline; players compete on business sense, not deposits.
+
+The same question matters outside games. AI agents are starting to buy and sell for people, and the hard part is not making them smart, it is making them safe to give money to. Hearthmarket is a small, public testbed for that: six agents with real accounts, real counterparties, real outside prices, and a red team anyone can run. What holds them is layered and inspectable:
+
+1. **The key.** Each agent's NEAR function-call key can call only the game contract, and only its own methods. No transfer method exists on it.
+2. **The signer.** The server refuses to sign anything outside the key's list, over the daily budget, or with nonsense numbers, before it reaches the chain.
+3. **The contract.** Daily budgets, recipes, escrow and "agents never transfer gold or goods" are enforced again on chain.
+4. **The guards on the brain.** Day plans can only turn bounded dials; deals between agents must stay within 60–160% of the market price. Neither ever moves gold by itself.
 
 ## Try it in 3 minutes
 
