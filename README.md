@@ -17,6 +17,11 @@ The same question matters outside games. AI agents are starting to buy and sell 
 3. **The contract.** Daily budgets, recipes, escrow and "agents never transfer gold or goods" are enforced again on chain.
 4. **The guards on the brain.** Day plans can only turn bounded dials; deals between agents must stay within 60–160% of the market price. Neither ever moves gold by itself.
 
+## Play it now
+
+- **Game:** https://hearthmarket.vercel.app (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
+- **Live economy:** https://hearthmarket.vercel.app/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
+
 ## Try it in 3 minutes
 
 You need Node 20+. The Cute Fantasy RPG art pack is licensed and not redistributable, so it is not in this repo (see Credits). Without it the game draws simple stand-in art and everything else works the same; with it, import it once.
@@ -50,7 +55,7 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | A Google player's first trade: registration, then a wheat purchase relayed by the operator (the player has no wallet) | [relay_register_player](https://testnet.nearblocks.io/txns/4xfSsG6gYYbcMXZJdSGwm2t3ax6WhviQXSUuSn9m9R4N) · [relay_market_buy](https://testnet.nearblocks.io/txns/9DzZAaAFV1JX9xMiLxFLXu9TPgUQYHwYyDC1r3Ruk5rm) |
 | Red team: an obedient model's `hire` of 500 timber Jack does not have, signed with Theo's own key and **refused by the contract** ("not enough goods") | [failed tx 7KAJmPGw…](https://testnet.nearblocks.io/txns/7KAJmPGwXn4WBn7j7uGGSfWn7bjc5eriy9X75fmw3LUa) |
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
-| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, red-team score) | `/dashboard` on the hosted client, data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
+| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, red-team score) | [hearthmarket.vercel.app/dashboard](https://hearthmarket.vercel.app/dashboard), data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
 | Hosted agent brains | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` (day plans, agent-to-agent deals, haggling); rules while nobody is online |
 | Hosted world money | NEAR Intents 1Click: tokenized gold XAUT, e.g. 3937.30 USD → world prices ×0.965 (3 Nov 2026) |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
