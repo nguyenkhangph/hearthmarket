@@ -5,7 +5,7 @@ import {
 import { icon } from './assets.ts';
 import type { GameSource } from './source.ts';
 
-type PanelId = 'market' | 'guild' | 'economy' | 'npc' | null;
+type PanelId = 'market' | 'guild' | 'economy' | 'npc' | 'account' | null;
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
@@ -23,6 +23,8 @@ export class Ui {
   private redBusy = false;
   /** selected red-team attack (index into RED_TEAM_ATTACKS), kept across re-renders */
   private redAttack = -1;
+  private claimed: { accountId: string; privateKey: string; contract: string } | null = null;
+  private claimError = '';
   private lastDay = 0;
   private simSummary: string | null = null;
 
@@ -31,6 +33,9 @@ export class Ui {
       b.addEventListener('click', () => this.open(b.dataset.panel as PanelId)),
     );
     $('#place-order').addEventListener('click', () => this.open('market'));
+    $('#account').addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-open="account"]')) this.open('account');
+    });
     $('#panel').addEventListener('click', (e) => this.onPanelClick(e));
     $('#panel').addEventListener('input', (e) => this.onPanelInput(e));
     $('#panel').addEventListener('submit', (e) => e.preventDefault());
@@ -91,7 +96,7 @@ export class Ui {
     const acct = this.src.account;
     $('#account').innerHTML = this.src.mode === 'guest'
       ? `${esc(me?.name ?? 'guest')} · guest`
-      : `${esc(me?.name ?? '')}${acct && this.src.chain === 'near' ? ` · <a class="tx" target="_blank" rel="noopener" title="Your NEAR account (testnet)" href="${EXPLORER}/address/${esc(acct)}">${esc(acct.slice(0, 6))}…${esc(acct.slice(-4))}</a>` : ''}`;
+      : `${esc(me?.name ?? '')}${acct ? ` · <button class="linkish" data-open="account" title="Your NEAR account: see it, claim it">${esc(acct.slice(0, 6))}…${esc(acct.slice(-4))}</button>` : ''}`;
   }
 
   private renderWorld() {
@@ -163,7 +168,8 @@ export class Ui {
     el.classList.remove('hidden');
     // don't clobber an input the player is typing in, or a dropdown that is open
     if (!force && el.contains(document.activeElement) && ['INPUT', 'SELECT'].includes((document.activeElement as HTMLElement).tagName)) return;
-    const body = this.panel === 'market' ? this.marketPanel()
+    const body = this.panel === 'account' ? this.accountPanel()
+      : this.panel === 'market' ? this.marketPanel()
       : this.panel === 'guild' ? this.guildPanel()
       : this.panel === 'economy' ? this.economyPanel()
       : this.npcPanel();
@@ -334,6 +340,45 @@ export class Ui {
 </div>`;
   }
 
+  private accountPanel() {
+    const me = this.me;
+    const acct = this.src.account;
+    if (this.src.mode === 'guest' || !acct) {
+      return `<section class="pcard"><h3>Your NEAR account</h3><p>Guest mode runs in your browser and has no account. Sign in with Google in the online village and a NEAR account is made for you: no wallet, no seed phrase. You can claim it into a real wallet any time.</p></section>`;
+    }
+    const k = this.claimed;
+    const canClaim = this.src.authKind === 'google' && !!this.src.claim;
+    return `
+<div class="grid-2">
+  <section class="pcard">
+    <h3>Your NEAR account</h3>
+    <div class="mono small break">${esc(acct)}</div>
+    <p class="small">An implicit account on NEAR testnet, derived from your Google sign-in: the same Google account always gets the same NEAR account. Your gold is the NEP-141 token <span class="mono">HGOLD</span> on <span class="mono">${esc(NEAR_CONFIG.contract)}</span>; quest and season badges are NEP-171 tokens.</p>
+    <div class="kvrow"><span>Gold in the village</span><b class="gold">${fmt(me?.gold ?? 0)}</b></div>
+    <div class="kvrow"><span>Badges</span><span>${me?.badges?.length ?? 0}</span></div>
+    <div class="row"><a class="btn" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(acct)}">Open on the explorer ↗</a></div>
+  </section>
+  <section class="pcard">
+    <h3>Claim it into your own wallet</h3>
+    ${k ? `
+    <p class="small down"><b>Your private key.</b> Anyone with it controls this account. Do not share it, screenshot it or paste it into a chat.</p>
+    <div class="secret mono">${esc(k.privateKey)}</div>
+    <div class="row"><button class="primary" data-act="copy-key">Copy key</button><button data-act="hide-key">Hide</button></div>
+    <ol class="small steps">
+      <li>Open a NEAR wallet that imports private keys (for example Meteor Wallet), switch it to <b>testnet</b>, choose <b>Import account → Private key</b> and paste the key.</li>
+      <li>The account only appears on chain once it holds a little NEAR for gas: send it 0.05 testnet NEAR from any testnet account or faucet.</li>
+      <li>From then on you can move your HGOLD yourself: <span class="mono">ft_transfer</span> on <span class="mono">${esc(k.contract)}</span>.</li>
+    </ol>
+    <p class="muted small">Until you claim, the game's operator relays your trades for you. That convenience stays on after you claim: the contract lets the operator place trades and orders for registered players, never transfer their gold out.</p>`
+    : canClaim ? `
+    <p class="small">The game made this account for you so you could play without a wallet. You can take the key and use the account anywhere, outside this game too.</p>
+    <button class="primary" data-act="claim">Reveal my private key</button>
+    ${this.claimError ? `<p class="small down">${esc(this.claimError)}</p>` : ''}`
+    : '<p class="small">Only accounts made from a Google sign-in can be claimed. Typed-email logins (development) have no proof of who you are.</p>'}
+  </section>
+</div>`;
+  }
+
   private npcPanel() {
     const v = this.v;
     const id = this.npc;
@@ -466,6 +511,19 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         this.renderPanel(true);
         break;
       }
+      case 'claim': {
+        if (!this.src.claim) return;
+        this.claimError = '';
+        const r = await this.src.claim();
+        if (r.ok) this.claimed = { accountId: r.accountId, privateKey: r.privateKey, contract: r.contract };
+        else this.claimError = r.reason.includes('expired') ? 'Your Google sign-in is older than an hour. Reload the page, sign in again, then claim.' : r.reason;
+        this.renderPanel(true);
+        break;
+      }
+      case 'copy-key':
+        if (this.claimed) await navigator.clipboard?.writeText(this.claimed.privateKey).then(() => this.toast('Key copied. Keep it secret.'), () => this.toast('Copy failed: select the key and copy it', true));
+        break;
+      case 'hide-key': this.claimed = null; this.renderPanel(true); break;
       case 'redteam': {
         const index = Number(this.val('attack'));
         if (!Number.isInteger(index) || this.redBusy) return;

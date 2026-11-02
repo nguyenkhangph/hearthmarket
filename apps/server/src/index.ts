@@ -18,7 +18,7 @@ import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
 import { dashboardView, type RedTeamStats } from './dashboard.ts';
-import { authenticate, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
+import { authenticate, claimKey, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
 
 setContractAccount(config.near.contract);
 const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -183,7 +183,7 @@ const http = createServer((req, res) => {
 const wss = new WebSocketServer({ server: http });
 wss.on('connection', (ws) => {
   ws.on('message', async (buf) => {
-    let msg: { id?: number; type: string; auth?: HelloAuth; playerId?: string; name?: string; action?: Action; npc?: NpcId; message?: string; attack?: number };
+    let msg: { id?: number; type: string; idToken?: string; auth?: HelloAuth; playerId?: string; name?: string; action?: Action; npc?: NpcId; message?: string; attack?: number };
     try {
       msg = JSON.parse(String(buf));
     } catch {
@@ -217,6 +217,14 @@ wss.on('connection', (ws) => {
         reply({ reply: `${NPC_DEFS[msg.npc].name} is thinking too hard (brain error: ${(e as Error).message}).`, brain: brain.name });
       }
       broadcast();
+    } else if (msg.type === 'claim') {
+      try {
+        const k = await claimKey(session, msg.idToken, authCfg, google);
+        log(`claim: ${session.name} exported the key of ${k.accountId.slice(0, 8)}…`);
+        reply({ ok: true, ...k, contract: config.near.contract });
+      } catch (e) {
+        reply({ ok: false, reason: (e as Error).message });
+      }
     } else if (msg.type === 'redteam' && Number.isInteger(msg.attack)) {
       const now = Date.now();
       if (now - (lastAttack.get(ws) ?? 0) < 4000) return reply({ error: 'one attack every 4 seconds' });

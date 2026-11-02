@@ -11,6 +11,8 @@ export interface HaggleResult {
   brain: string;
 }
 
+export type ClaimResult = { ok: true; accountId: string; privateKey: string; contract: string } | { ok: false; reason: string };
+
 /** One red-team attack and what stopped it. */
 export interface RedTeamResult extends HaggleResult {
   attack: string;
@@ -39,6 +41,10 @@ export interface GameSource {
   haggle(npc: NpcId, message: string): Promise<HaggleResult>;
   /** run attack `index` of RED_TEAM_ATTACKS through a deliberately obedient model */
   redTeam(index: number): Promise<RedTeamResult>;
+  /** Google players: the private key of their NEAR account, to import into any wallet */
+  claim?(): Promise<ClaimResult>;
+  /** how the player signed in (online) */
+  readonly authKind?: 'google' | 'dev';
   onUpdate(cb: () => void): void;
   onFeed(cb: (e: FeedEvent) => void): void;
   setSpeed(secondsPerHour: number): void;
@@ -166,9 +172,10 @@ export class RemoteSource implements GameSource {
   playerId = '';
   account?: string;
   chain?: 'mock' | 'near';
+  authKind?: 'google' | 'dev';
   ready: Promise<void>;
 
-  constructor(private url: string, auth: HelloAuth) {
+  constructor(private url: string, private auth: HelloAuth) {
     this.ws = new WebSocket(url);
     this.ready = new Promise((resolve, reject) => {
       this.ws.onerror = () => reject(new Error(`cannot reach ${url}`));
@@ -178,6 +185,7 @@ export class RemoteSource implements GameSource {
           this.playerId = msg.playerId;
           this.account = msg.account;
           this.chain = msg.chain;
+          this.authKind = msg.auth;
         } else if (msg.type === 'denied') {
           reject(new SignInError(msg.reason));
         } else if (msg.type === 'state') {
@@ -222,6 +230,10 @@ export class RemoteSource implements GameSource {
   }
   redTeam(index: number) {
     return this.call<RedTeamResult>({ type: 'redteam', attack: index });
+  }
+  /** Sends the Google ID token again: the server checks it is the same Google account. */
+  claim() {
+    return this.call<ClaimResult>({ type: 'claim', idToken: this.auth.kind === 'google' ? this.auth.idToken : undefined });
   }
   onUpdate(cb: () => void) {
     this.updates.push(cb);

@@ -51,7 +51,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 101 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 104 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
 ```
@@ -138,7 +138,8 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Google sign-in, derived player accounts | working (local and hosted) |
 | NPC brains on NEAR AI Cloud | code and tests done; off by default (rule brain), needs a NEAR AI API key; if the model fails, haggling falls back to the rules |
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
-| NEP-245 items, market wars, claim-your-account | planned |
+| Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
+| NEP-245 items, market wars | planned |
 
 ## Built during NEAR HACKATHON
 
