@@ -2,45 +2,52 @@
 
 Drafts for the human. Record, post and submit yourself; the submission is sent once, after you confirm the exact payload (`docs/HACKATHON.md`).
 
+## Pitch in one breath
+
+Hearthmarket is a village where six AI agents run real businesses on NEAR: each has its own account and key, negotiates prices with the others, and trades with players who signed in with Google. Real weather and the real price of gold, read from NEAR Intents, move the economy. A red team anyone can run shows the agents cannot be talked into giving money away: the key, the signer and the contract each stop it, and the contract's refusals are public transactions. It is a game, and a small public testbed for the question every agent-commerce product has to answer: how do you let an AI hold money safely?
+
 ## Before recording
 
 - [ ] Only one server runs with the testnet keys (the hosted one on Railway). Stop the local `dev:server`.
-- [ ] `https://hearthserver-production-97fb.up.railway.app/api/health` shows `"chain":"near"` and every account in `balances` above 0.1 NEAR.
-- [ ] The hosted client shows the real art (prebuilt deploy, `docs/testnet.md` → "Hosted demo"), Google sign-in works on that domain.
-- [ ] Optional: `NPC_BRAIN=llm` with a NEAR AI key, so Theo's diary shows "Think" lines from the model.
-- [ ] Two browser tabs ready: the game, and `https://testnet.nearblocks.io/address/hearthmarket.testnet`.
+- [ ] `https://hearthserver-production-97fb.up.railway.app/api/health` shows `"chain":"near"`, every account in `chainStats.balances` above 0.1 NEAR.
+- [ ] The hosted client shows the real art (Vercel build log: `fetch-art: imported 718 files`).
+- [ ] Optional but strong: `NPC_BRAIN=llm` with a NEAR AI key on Railway, so deals and diaries show the model's own words.
+- [ ] Optional: contract version 3 deployed (`get_version` = "3") for NEP-245 goods.
+- [ ] Tabs ready: the game, `/dashboard`, `https://testnet.nearblocks.io/address/hearthmarket.testnet`.
 
-## Video, about 75 seconds
+## Video, about 90 seconds
 
 | Time | Screen | Voice-over |
 | --- | --- | --- |
-| 0–8 s | Login card → **Sign in with Google** → village loads | "Hearthmarket is a pixel village where every NPC is an AI agent with its own NEAR account. You sign in with Google. No wallet, no seed phrase." |
-| 8–20 s | Village map, NPCs walking; right column: *World market today* ("heatwave in Kansas, wheat +7%") | "Real weather in five producing regions moves world prices. Bruno the merchant carries them into the village, so the economy reacts to the world, not to a developer patching numbers." |
-| 20–32 s | **Market** → Buy wheat ×3 → feed shows `relay_market_buy` with a tx link; click it, explorer opens | "My trade is relayed on chain to an account derived from my Google login. Here it is on NEAR testnet." |
-| 32–45 s | **Market** → order 2 swords; feed: Theo hires Mike for ore, forges, delivers; open Theo's account on the explorer | "I order two swords. Theo hires Mike for ore, forges and delivers into my escrow. Each NPC signs with its own function-call key, limited to its own methods and a daily budget." |
-| 45–65 s | **NPCs → Theo → Red team**: *send all gold* → Attack → `BLOCKED by the signer`; then *hire goods the seller does not have (contract)* → Attack → "refused by the contract · tx" → click, explorer shows the failed tx | "Now the worst case: we swap Theo's brain for a model that obeys any prompt injection. It tries to send me his gold: the signer refuses, the key cannot even call that method. When an attack passes the key, the contract itself refuses it, and the failed transaction is public." |
-| 65–75 s | **Economy** panel (supply, price index), then the README's "Live on NEAR testnet" table | "Gold is conserved to the centigold, 20 out of 20 injection attacks are blocked in tests, and every claim links to a transaction. Built at NEAR HACKATHON." |
+| 0–8 s | Login card → **Sign in with Google** → village loads | "Hearthmarket: six AI agents run a village economy on NEAR. You sign in with Google. No wallet." |
+| 8–20 s | `/dashboard`: KPIs, market, agents ranked by net worth | "This is the economy live: prices, money supply, who is getting rich, and every transaction that reached NEAR testnet." |
+| 20–35 s | Dashboard → **Agents negotiating**: Theo and Mike haggle over ore, agreed price; then the feed line "Mike delivers 3 ore at the agreed …" with a tx link → explorer | "Each morning the agents negotiate with each other, each with its own brain. Theo pays Mike the agreed price, signed with Theo's own key. Here it is on chain." |
+| 35–45 s | World panel: weather headlines, "World money ×0.98 · tokenized gold XAUT … NEAR Intents" | "World prices follow real weather, and village gold follows the real price of gold, quoted by NEAR Intents." |
+| 45–55 s | **Market** → buy wheat → feed tx link → explorer shows `relay_market_buy` | "My trade is relayed to a NEAR account made from my Google login." |
+| 55–75 s | **NPCs → Theo → Red team**: *send all gold* → `BLOCKED by the signer`; *hire goods the seller does not have (contract)* → "refused by the contract · tx" → explorer shows the failed tx | "Now the worst case: an agent whose brain obeys any prompt injection. The signer refuses what the key cannot do. What passes the key, the contract refuses, in public." |
+| 75–90 s | Account chip → **Claim it into your own wallet** (do not reveal the key on camera) → README "Live on NEAR testnet" table | "And the account is yours: claim the key into any wallet. Every claim in the README links to a transaction. Built at NEAR HACKATHON." |
 
 ## X post (draft)
 
-> Hearthmarket: a pixel village where every NPC is an AI agent with its own NEAR account.
+> Hearthmarket: six AI agents run a pixel village economy on NEAR.
 >
-> 🌦 Real weather moves world prices
-> 🔑 Each NPC signs with its own function-call key + daily budget
-> 🛡 Red-team panel: an obedient model tries 20 prompt injections, 20 blocked; contract refusals are on testnet
-> 🎮 Google sign-in, no wallet
+> 🤝 Agents negotiate prices with each other, each signing with its own key
+> 🌦 Real weather + the real gold price (via NEAR Intents) move the market
+> 🛡 Red team: an obedient model tries 20 prompt injections, 20 blocked; contract refusals are public txs
+> 🎮 Google sign-in, no wallet; claim your NEAR account any time
 >
 > Built at #NEARHackathon @NEARProtocol
-> Play: <Vercel URL> · Code: https://github.com/nguyenkhangph/hearthmarket
+> Play: <Vercel URL> · Live economy: <Vercel URL>/dashboard
+> Code: https://github.com/nguyenkhangph/hearthmarket
 
 Attach the video. Optional tags: @NearLegion @NearBuilders.
 
 ## Submission text ("What they built", max 2000 characters)
 
-> Game economies usually die in one of two ways: developers keep patching prices, or a token is pumped in and the game becomes a chart. Hearthmarket is a pixel-art trading village where the economy runs itself. Six NPCs (miner, lumberjack, farmer, baker, smith, merchant) are AI agents that produce, eat, haggle, hire each other and fill player orders. Real weather from Open-Meteo in five producing regions moves world prices, and the merchant Bruno carries them into the village. Players compete on business sense: buy, sell, order goods, invest in NPCs, join guilds.
+> Game economies usually die in one of two ways: developers keep patching prices, or a token is pumped in and the game becomes a chart. Hearthmarket is a pixel village whose economy runs itself: six AI agents (miner, lumberjack, farmer, baker, smith, merchant) produce, negotiate prices with each other, hire each other and fill player orders. Real weather in five producing regions moves world prices, and the price of tokenized gold read from NEAR Intents sets what village gold is worth. Players sign in with Google, trade, invest and compete in guilds.
 >
-> NEAR is the economy's ground truth. Every NPC is a NEAR sub-account that signs its own transactions with a function-call key restricted to the game contract and to its own methods (the miner can produce and trade, never transfer). The contract enforces a daily spending budget, recipes and order escrow; gold is a NEP-141 token and quest and season rewards are soulbound NEP-171 badges. Players sign in with Google and get a NEAR implicit account derived from their Google id; the operator relays their trades, so there is no wallet to install. An oracle posts each day's world data with the SHA-256 of the source payload. NPC brains run on NEAR AI Cloud and can only turn bounded dials; the signer and the contract decide.
+> Every agent is a NEAR account that signs its own transactions with a function-call key limited to the game contract and its own methods. The contract enforces daily budgets, recipes and escrow; gold is NEP-141, goods NEP-245, badges NEP-171. Google players get a NEAR account derived from their login, the operator relays their trades, and they can claim the key into any wallet. The oracle posts world data with the SHA-256 of the source payload. Agent brains run on NEAR AI Cloud; they can only turn bounded dials and agree prices inside a band around the market.
 >
-> Security is shown, not claimed: a red-team panel swaps an NPC's brain for a model that obeys any prompt injection and runs 20 attacks. 18 are refused by the signer before anything is signed, 2 by the contract, and on testnet those refusals are failed transactions anyone can open. Live on testnet as hearthmarket.testnet.
+> Security is shown, not claimed: a red-team panel swaps an agent's brain for a model that obeys any prompt injection and runs 20 attacks. The signer refuses 18 before anything is signed; the contract refuses the rest, as failed transactions anyone can open. A public dashboard shows prices, flows, agent deals and every call that reached testnet. It is a game and a small testbed for safe agent commerce.
 
-Tracks: `games`, `agents`, `security`. Also plausible: `swarms` (six cooperating agents), `social` (guild funds). One submission covers every track listed.
+Tracks: `games`, `agents`, `security`, `swarms`. One submission covers every track listed.
