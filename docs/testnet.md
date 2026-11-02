@@ -32,7 +32,7 @@ irm https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-ins
 [Environment]::SetEnvironmentVariable("AWS_LC_SYS_PREBUILT_NASM", "1", "User")
 $env:AWS_LC_SYS_PREBUILT_NASM = "1"
 
-npm run contract:test      # 39 passed
+npm run contract:test      # 45 passed
 ```
 
 ## 2. Create the contract account
@@ -119,6 +119,21 @@ Version 2 adds NEP-141/171, crafting, the operator, relays and `reconcile`. The 
 
 2. Put the owner key back in `.env` (`OWNER_PRIVATE_KEY=`, see step 4), run `npm run setup:testnet -- --dry-run`, then `npm run setup:testnet`. It replaces the old keys (their method lists changed), sets crafting rights and adds the operator key.
 3. Delete `OWNER_PRIVATE_KEY` again, start `npm run dev:server` and `npm run dev`.
+
+## Upgrade from version 2 to 3 (NEP-245 goods)
+
+Version 3 adds NEP-245 multi-token views, transfers and events for the goods. The stored state is the same as version 2, so there is **no migrate call**: deploy the new code without an init call.
+
+```powershell
+cd contracts\hearth
+cargo near build non-reproducible-wasm --no-abi
+near contract deploy hearthmarket.testnet use-file target\near\hearth.wasm without-init-call network-config testnet sign-with-keychain send
+near contract call-function as-read-only hearthmarket.testnet get_version json-args '{}' network-config testnet now
+near contract call-function as-read-only hearthmarket.testnet mt_balance_of json-args '{\"account_id\":\"mike.hearthmarket.testnet\",\"token_id\":\"ore\"}' network-config testnet now
+cd ..\..
+```
+
+`get_version` must print `"3"`. Keys, NPCs and balances stay as they are; the server needs no restart.
 
 ## Google sign-in (optional, recommended for the demo)
 

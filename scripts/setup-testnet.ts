@@ -122,7 +122,7 @@ try {
     fail(`${contract} has no initialised hearth contract. Deploy it and call new(...) first (docs/testnet.md).`);
   }
 }
-if (version !== '2') fail(`expected contract version 2, found "${version}". Rebuild and redeploy contracts/hearth.`);
+if (!['2', '3'].includes(version)) fail(`expected contract version 2 or 3, found "${version}". Rebuild and redeploy contracts/hearth.`);
 const [, oracle] = (await view<[string, string]>('get_roles', {})) ?? ['', ''];
 if (oracle !== contract) console.log(`! the contract's oracle is ${oracle}; the operator key below goes on ${contract}. Relays will fail unless they match.\n`);
 

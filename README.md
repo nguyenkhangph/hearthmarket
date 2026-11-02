@@ -53,7 +53,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ```sh
 npm test              # 108 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
-npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
+npm run contract:test # 45 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, migrate)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).
@@ -68,12 +68,12 @@ npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171,
 | **Function-call access keys, least privilege**: each NPC key can call only the contract, and only its own methods (Mike: `produce` + trading; Theo: `craft` + trading; Bruno: `world_trade` + trading). The game server's operator key has a separate list and can never sign as an NPC | `NPC_KEY_METHODS` / `OPERATOR_METHODS` in `packages/economy/src/policy.ts`; enforced by NEAR for the key, checked again before signing (`apps/server/src/chain/mirror.ts`) |
 | **Contract-side spending guard**: daily gold budget per NPC, NPCs can never `ft_transfer`, recipes for crafting, price and quantity sanity | `contracts/hearth/src/lib.rs` (`assert_npc_spend`, `ft_transfer`, `craft`) |
 | **Every NPC action on chain, signed by the NPC**: production, crafting, NPC deals, market trades, order fills, Bruno's world trades. One queue per key | `apps/server/src/chain/mirror.ts`; live example: [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
-| **NEP-141 gold** (`HGOLD`, 2 decimals) with NEP-297 events; **NEP-171 soulbound badges** for quests and season ranks | `ft_*` and `nft_*` methods in the contract |
+| **NEP-141 gold** (`HGOLD`, 2 decimals) with NEP-297 events; **NEP-171 soulbound badges** for quests and season ranks; **NEP-245 goods** (`ore`, `timber`, `wheat`, `bread`, `tools`, `sword` as multi-tokens: balances, player transfers, `mt_mint`/`mt_burn`/`mt_transfer` events; NPCs cannot transfer) | `ft_*`, `nft_*` and `mt_*` methods in the contract (version 3) |
 | **Wallet-less players**: Google sign-in → a NEAR implicit account derived per Google account; the operator relays their trades and orders | `apps/server/src/auth.ts`, `relay_*` in the contract |
 | **Oracle with verifiable inputs**: each day's world data posted with the API source, the reading and the SHA-256 of the full Open-Meteo payload | `post_world_data`; `apps/server/src/world/openMeteo.ts` |
 | **NEAR AI Cloud** (OpenAI-compatible) for NPC brains: day plans within bounded dials, haggling | `apps/server/src/brain/`; `npm run llm:check` |
 | **Gas budget**: NPC accounts pay their own gas, so the mirror pauses while nobody is online, caps calls per NPC per hour, batches a day of production into one `produce` per item, and warns when an account runs low | `apps/server/src/chain/mirror.ts`; settings in `.env.example` (`CHAIN_*`) |
-| NEP-245 items, guild funds on chain | *planned* |
+| Guild funds on chain | *planned* |
 | **NEAR Intents** (1Click API, read-only): village gold is pegged to real gold; Bruno converts world prices at the tokenized-gold (XAUT) price NEAR Intents quotes, posted on chain with the payload hash. No swaps: game gold never leaves the game | `apps/server/src/world/intents.ts`, `Village.setWorldFx` (factor clamped to 0.9–1.1) |
 
 ## Architecture
@@ -140,7 +140,8 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
 | World money from NEAR Intents (tokenized-gold price moves world prices, ±10% at most) | working (`WORLD_FX=near-intents`, default) |
 | Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
-| NEP-245 items, market wars | planned |
+| NEP-245 goods (contract version 3) | written and unit-tested; on testnet after the version 3 deploy (`docs/testnet.md`) |
+| Market wars, guild funds on chain | planned |
 
 ## Built during NEAR HACKATHON
 
