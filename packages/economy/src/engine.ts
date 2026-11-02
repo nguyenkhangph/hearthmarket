@@ -49,7 +49,7 @@ const TX_CAP = 400;
 
 /** Tile positions on the village map (apps/client/src/map.ts). */
 export const HOME: Record<NpcId, [number, number]> = {
-  mike: [44, 13], jack: [17, 21], buba: [10, 22], chloe: [18, 12], theo: [30, 12], bruno: [12, 13],
+  mike: [44, 13], jack: [20, 22], buba: [10, 22], chloe: [18, 12], theo: [30, 12], bruno: [12, 13],
 };
 export const MARKET_SPOT: Record<NpcId, [number, number]> = {
   mike: [27, 19], jack: [19, 19], buba: [21, 15], chloe: [17, 15], theo: [29, 15], bruno: [25, 15],

@@ -26,6 +26,26 @@ function portrait(id: NpcId, canvas: HTMLCanvasElement) {
   ctx.drawImage(frame.source.image as CanvasImageSource, frame.cutX + 16, frame.cutY + 8, 32, 40, 16, 4, 96, 120);
 }
 
+/** A small face of each NPC (from its first idle frame) for the feed and tabs, cached as a data URL. */
+const faces = new Map<NpcId, string>();
+function face(id: NpcId): string | undefined {
+  if (!game) return undefined;
+  const hit = faces.get(id);
+  if (hit) return hit;
+  const tex = game.textures.get(`npc-${id}`);
+  if (!tex || tex.key === '__MISSING') return undefined;
+  const frame = tex.get(0);
+  const c = document.createElement('canvas');
+  c.width = 20;
+  c.height = 20;
+  const ctx = c.getContext('2d')!;
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(frame.source.image as CanvasImageSource, frame.cutX + 22, frame.cutY + 17, 20, 20, 0, 0, 20, 20);
+  const url = c.toDataURL();
+  faces.set(id, url);
+  return url;
+}
+
 interface ServerConfig {
   googleClientId: string;
   devLogin: boolean;
@@ -60,7 +80,7 @@ async function boot(name: string, auth: HelloAuth | null) {
   document.getElementById('login')!.classList.add('hidden');
   document.body.dataset.mode = src.mode;
   await artReady;
-  const ui = new Ui(src, portrait);
+  const ui = new Ui(src, portrait, face);
   game = startGame(document.getElementById('game')!, src, (id) => ui.open('npc', id));
   const speed = document.getElementById('speed') as HTMLSelectElement;
   speed.addEventListener('change', () => src.setSpeed(Number(speed.value)));

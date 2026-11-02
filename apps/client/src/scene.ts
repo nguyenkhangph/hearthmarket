@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { NPCS, NPC_DEFS, type NpcId, type FeedEvent } from '@hearth/economy';
+import { HOME, NPCS, NPC_DEFS, type NpcId, type FeedEvent } from '@hearth/economy';
 import { cf, IMAGES, NPC_SHEETS, SHEETS, THEO_LAYERS, TILE, TILESETS } from './assets.ts';
 import { BRIDGE, buildGround, MAP_H, MAP_W, PROPS, wheatTiles, type Ground } from './map.ts';
 import type { GameSource } from './source.ts';
@@ -7,6 +7,20 @@ import { ART, makeFallbackTextures } from './fallbackArt.ts';
 import { preloadLife, VillageLife } from './life.ts';
 
 const ROAD_ROW = 17;
+
+/**
+ * Work animations from the premade NPC sheets (rows below the walk cycles): Mike swings his
+ * pickaxe, Jack his axe, Buba hoes and waters the field, Chloe and Bruno busy themselves.
+ * Theo has no premade sheet; his anvil rings instead (life.ts). [row, frames, fps, flipX]
+ */
+const WORK: Partial<Record<NpcId, { row: number; n: number; fps: number; flip?: boolean }[]>> = {
+  mike: [{ row: 7, n: 6, fps: 8 }],
+  jack: [{ row: 7, n: 6, fps: 8, flip: true }],
+  buba: [{ row: 8, n: 6, fps: 7 }, { row: 11, n: 6, fps: 6 }],
+  chloe: [{ row: 6, n: 4, fps: 5 }],
+  bruno: [{ row: 6, n: 4, fps: 4 }],
+};
+const isWorkHour = (h: number) => (h >= 6 && h < 14) || (h >= 18 && h < 20);
 const WALK_SPEED = 42; // px per second
 
 interface Walker {
@@ -25,6 +39,7 @@ export class VillageScene extends Phaser.Scene {
   private labels!: HTMLElement;
   private labelEls = new Map<string, HTMLElement>();
   private life?: VillageLife;
+  private working = false;
   private bubbles = new Map<NpcId, { el: HTMLElement; until: number; think?: boolean }>();
 
   constructor(private src: GameSource, private onNpcClick: (id: NpcId) => void) {
@@ -176,6 +191,11 @@ export class VillageScene extends Phaser.Scene {
       const row = (r: number, n = 6) => Array.from({ length: n }, (_, i) => ({ key, frame: r * cols + i }));
       const mk = (name: string, r: number, rate: number) =>
         this.anims.create({ key: `${key}-${name}`, frames: row(r), frameRate: rate, repeat: -1 });
+      if (ART.ok) {
+        (WORK[id] ?? []).forEach((w, i) =>
+          this.anims.create({ key: `${key}-work${i}`, frames: Array.from({ length: w.n }, (_, k) => ({ key, frame: w.row * cols + k })), frameRate: w.fps, repeat: -1 }),
+        );
+      }
       mk('idle-down', 0, 5);
       mk('idle-side', 1, 5);
       mk('idle-up', 2, 5);
@@ -201,6 +221,8 @@ export class VillageScene extends Phaser.Scene {
     const dark = h >= 21 || h < 5 ? 0.5 : h === 19 || h === 20 || h === 5 ? 0.25 : 0;
     this.tweens.add({ targets: this.night, fillAlpha: dark, duration: 800 });
     this.life?.sync(v, dark);
+    this.working = isWorkHour(h);
+    this.life?.setWorking(this.working);
     // stall owners
     v.s.stalls.forEach((st, i) => {
       const gl = st.guild ? v.s.guilds[st.guild] : null;
@@ -241,7 +263,18 @@ export class VillageScene extends Phaser.Scene {
         const anim = `${w.key}-walk-${facing}`;
         if (s.anims.currentAnim?.key !== anim) s.play(anim);
       } else {
-        const anim = `${w.key}-idle-${w.facing === 'side' ? 'side' : w.facing}`;
+        let anim = `${w.key}-idle-${w.facing === 'side' ? 'side' : w.facing}`;
+        const jobs = ART.ok ? WORK[w.id] : undefined;
+        const [hx, hy] = HOME[w.id];
+        if (jobs && this.working && Math.abs(s.x - (hx * TILE + 8)) < 2 && Math.abs(s.y - (hy * TILE + 8)) < 2) {
+          // alternate between the NPC's jobs every ~6 seconds
+          const i = Math.floor(performance.now() / 6000 + w.id.length) % jobs.length;
+          anim = `${w.key}-work${i}`;
+          s.setFlipX(!!jobs[i].flip);
+        } else if (ART.ok && w.id === 'theo' && this.working && Math.abs(s.x - (hx * TILE + 8)) < 2 && Math.abs(s.y - (hy * TILE + 8)) < 2) {
+          anim = `${w.key}-idle-side`; // at the anvil, to his right
+          s.setFlipX(false);
+        }
         if (s.anims.currentAnim?.key !== anim) s.play(anim);
       }
       s.setDepth(s.y + 8);
@@ -308,7 +341,7 @@ export function startGame(parent: HTMLElement, src: GameSource, onNpcClick: (id:
     width: MAP_W * TILE,
     height: MAP_H * TILE,
     pixelArt: true,
-    backgroundColor: '#1b1e2b',
+    backgroundColor: '#120d0a',
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: new VillageScene(src, onNpcClick),
   });

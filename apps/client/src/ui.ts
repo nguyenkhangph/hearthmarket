@@ -28,7 +28,11 @@ export class Ui {
   private lastDay = 0;
   private simSummary: string | null = null;
 
-  constructor(private src: GameSource, private portrait: (id: NpcId, canvas: HTMLCanvasElement) => void) {
+  constructor(
+    private src: GameSource,
+    private portrait: (id: NpcId, canvas: HTMLCanvasElement) => void,
+    private face: (id: NpcId) => string | undefined = () => undefined,
+  ) {
     document.querySelectorAll<HTMLElement>('[data-panel]').forEach((b) =>
       b.addEventListener('click', () => this.open(b.dataset.panel as PanelId)),
     );
@@ -138,7 +142,8 @@ export class Ui {
       .map((e) => {
         let html = this.highlight(e.text);
         if (e.tx) html = html.replace(esc(short(e.tx)), this.txLink(e.tx));
-        return `<li class="k-${e.kind}"><time>${hh(e.t)}</time><span>${html}</span></li>`;
+        const f = e.npc ? this.face(e.npc) : undefined;
+        return `<li class="k-${e.kind}"><time>${hh(e.t)}</time><span>${f ? `<img class="face" src="${f}" alt="">` : ''}${html}</span></li>`;
       })
       .join('');
   }
@@ -394,7 +399,10 @@ export class Ui {
     const hungerPct = Math.max(0, 100 - n.hunger * 25);
     const spentPct = Math.min(100, (n.spentToday / def.dailyBudget) * 100);
     const blocked = txs.find((t) => !t.ok);
-    const tabs = NPCS.map((x) => `<button class="${x === id ? 'active' : ''}" data-act="npc" data-id="${x}">${NPC_DEFS[x].name}</button>`).join('');
+    const tabs = NPCS.map((x) => {
+      const f = this.face(x);
+      return `<button class="${x === id ? 'active' : ''}" data-act="npc" data-id="${x}">${f ? `<img class="face" src="${f}" alt="">` : ''}${NPC_DEFS[x].name}</button>`;
+    }).join('');
     return `
 <div class="npc-tabs">${tabs}</div>
 <div class="grid-3">
