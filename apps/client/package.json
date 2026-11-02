@@ -13,6 +13,7 @@
     "phaser": "3.90.0"
   },
   "devDependencies": {
+    "fflate": "^0.8.2",
     "vite": "6.4.5"
   }
 }
