@@ -558,6 +558,8 @@ export class Village {
     const deals = (this.s.deals ??= []);
     deals.push(deal);
     if (deals.length > 40) deals.splice(0, deals.length - 40);
+    const sellerWords = deal.rounds.filter((r) => r.who === input.seller).at(-1)?.say;
+    if (sellerWords && !/^rules/.test(input.by)) this.feed('think', `${NPC_DEFS[input.seller].name} to ${NPC_DEFS[input.buyer].name}: "${sellerWords.slice(0, 140)}"`, input.seller);
     this.feed('deal', describeDeal(deal) + (deal.guard.length ? ` · deal guard: ${deal.guard.join('; ')}` : ''), input.buyer);
     const last = deal.rounds.filter((r) => r.who === input.buyer).at(-1)?.say ?? '';
     this.diary({
@@ -1244,6 +1246,8 @@ export class Village {
   setPlan(id: NpcId, proposal: Record<string, unknown>, by: string, why = '', saw = ''): NpcPlan {
     const { plan, notes } = checkPlan(id, proposal, this.day, by, why);
     this.s.npcs[id].plan = plan;
+    // the agent's own reasoning, in the feed and as a thought bubble on the map
+    this.feed('think', `${NPC_DEFS[id].name} thinks (${by.replace(/ \(.*$/, '')}): "${(plan.why || 'routine day').slice(0, 140)}" → ${describePlan(plan)}`, id);
     this.diary({
       npc: id,
       goal: `plan day ${this.day}`,

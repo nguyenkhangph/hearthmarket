@@ -23,7 +23,7 @@ export class VillageScene extends Phaser.Scene {
   private night!: Phaser.GameObjects.Rectangle;
   private labels!: HTMLElement;
   private labelEls = new Map<string, HTMLElement>();
-  private bubbles = new Map<NpcId, { el: HTMLElement; until: number }>();
+  private bubbles = new Map<NpcId, { el: HTMLElement; until: number; think?: boolean }>();
 
   constructor(private src: GameSource, private onNpcClick: (id: NpcId) => void) {
     super('village');
@@ -276,14 +276,17 @@ export class VillageScene extends Phaser.Scene {
   }
 
   private bubble(e: FeedEvent) {
-    if (!e.npc || !['deal', 'order', 'blocked', 'craft', 'hunger'].includes(e.kind)) return;
-    const text = e.text.replace(/ · tx .*$/, '').replace(`${NPC_DEFS[e.npc].name} `, '');
+    if (!e.npc || !['deal', 'order', 'blocked', 'craft', 'hunger', 'think'].includes(e.kind)) return;
+    if (e.kind !== 'think' && this.bubbles.get(e.npc)?.think && performance.now() < this.bubbles.get(e.npc)!.until) return; // let a thought finish
+    const think = e.kind === 'think';
+    const text = e.text.replace(/ · tx .*$/, '').replace(`${NPC_DEFS[e.npc].name} `, '').replace(/^thinks( \([^)]*\))?: /, '💭 ');
     this.bubbles.get(e.npc)?.el.remove();
     const el = document.createElement('div');
-    el.className = `bubble ${e.kind === 'blocked' ? 'bubble-blocked' : ''}`;
-    el.textContent = text.length > 48 ? text.slice(0, 46) + '…' : text;
+    el.className = `bubble ${e.kind === 'blocked' ? 'bubble-blocked' : ''} ${think ? 'bubble-think' : ''}`;
+    const max = think ? 120 : 48;
+    el.textContent = text.length > max ? text.slice(0, max - 2) + '…' : text;
     this.labels.appendChild(el);
-    this.bubbles.set(e.npc, { el, until: performance.now() + 4500 });
+    this.bubbles.set(e.npc, { el, until: performance.now() + (think ? 8000 : 4500), think });
   }
 }
 

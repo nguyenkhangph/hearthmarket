@@ -161,7 +161,7 @@ export interface DiaryEntry {
 
 export type FeedKind =
   | 'world' | 'shipping' | 'deal' | 'order' | 'trade' | 'import' | 'export'
-  | 'invest' | 'guild' | 'stall' | 'blocked' | 'hunger' | 'season' | 'quest' | 'craft';
+  | 'invest' | 'guild' | 'stall' | 'blocked' | 'hunger' | 'season' | 'quest' | 'craft' | 'think';
 
 export interface FeedEvent {
   t: number;
