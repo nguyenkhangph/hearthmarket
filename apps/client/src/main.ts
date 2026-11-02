@@ -64,7 +64,7 @@ async function boot(name: string, auth: HelloAuth | null) {
   game = startGame(document.getElementById('game')!, src, (id) => ui.open('npc', id));
   const speed = document.getElementById('speed') as HTMLSelectElement;
   speed.addEventListener('change', () => src.setSpeed(Number(speed.value)));
-  (window as unknown as { hearth: unknown }).hearth = { src, ui };
+  (window as unknown as { hearth: unknown }).hearth = { src, ui, game };
 }
 
 /** Google Identity Services: the button returns a signed ID token that the server verifies. */

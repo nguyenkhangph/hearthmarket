@@ -4,6 +4,7 @@ import { cf, IMAGES, NPC_SHEETS, SHEETS, THEO_LAYERS, TILE, TILESETS } from './a
 import { BRIDGE, buildGround, MAP_H, MAP_W, PROPS, wheatTiles, type Ground } from './map.ts';
 import type { GameSource } from './source.ts';
 import { ART, makeFallbackTextures } from './fallbackArt.ts';
+import { preloadLife, VillageLife } from './life.ts';
 
 const ROAD_ROW = 17;
 const WALK_SPEED = 42; // px per second
@@ -23,6 +24,7 @@ export class VillageScene extends Phaser.Scene {
   private night!: Phaser.GameObjects.Rectangle;
   private labels!: HTMLElement;
   private labelEls = new Map<string, HTMLElement>();
+  private life?: VillageLife;
   private bubbles = new Map<NpcId, { el: HTMLElement; until: number; think?: boolean }>();
 
   constructor(private src: GameSource, private onNpcClick: (id: NpcId) => void) {
@@ -36,6 +38,7 @@ export class VillageScene extends Phaser.Scene {
     for (const [k, s] of Object.entries(SHEETS)) this.load.spritesheet(k, cf(s.path), { frameWidth: s.w, frameHeight: s.h });
     for (const [k, p] of Object.entries(NPC_SHEETS)) this.load.spritesheet(`npc-${k}`, cf(p!), { frameWidth: 64, frameHeight: 64 });
     THEO_LAYERS.forEach((p, i) => this.load.image(`theo-layer-${i}`, cf(p)));
+    preloadLife(this);
   }
 
   create() {
@@ -45,6 +48,10 @@ export class VillageScene extends Phaser.Scene {
     this.composeTheo();
     this.createNpcAnims();
     this.anims.create({ key: 'campfire', frames: this.anims.generateFrameNumbers('campfire', { start: 0, end: 7 }), frameRate: 8, repeat: -1 });
+    if (ART.ok) {
+      this.life = new VillageLife(this);
+      this.life.create();
+    }
 
     this.night = this.add.rectangle(0, 0, MAP_W * TILE, MAP_H * TILE, 0x10142a, 0).setOrigin(0).setDepth(10_000);
     this.labels = document.getElementById('labels')!;
@@ -138,6 +145,8 @@ export class VillageScene extends Phaser.Scene {
       const y = p.y * TILE;
       const obj = p.kind === 'image' ? this.add.image(x, y, p.key) : this.add.sprite(x, y, p.key, p.frame);
       obj.setOrigin(0, 0);
+      // the windmill sheet also holds a still sail beside the tower; the animated one is in life.ts
+      if (p.key === 'windmill' && ART.ok) obj.setCrop(0, 0, 56, 112);
       obj.setDepth(y + obj.height - 6 + (p.bias ?? 0));
       if (p.anim && obj instanceof Phaser.GameObjects.Sprite) this.time.delayedCall(10, () => obj.play(p.anim!));
     }
@@ -189,8 +198,9 @@ export class VillageScene extends Phaser.Scene {
     }
     // night tint: dark from 20:00 to 05:00
     const h = v.hour;
-    const dark = h >= 20 || h < 5 ? 0.38 : h === 19 || h === 5 ? 0.18 : 0;
+    const dark = h >= 21 || h < 5 ? 0.5 : h === 19 || h === 20 || h === 5 ? 0.25 : 0;
     this.tweens.add({ targets: this.night, fillAlpha: dark, duration: 800 });
+    this.life?.sync(v, dark);
     // stall owners
     v.s.stalls.forEach((st, i) => {
       const gl = st.guild ? v.s.guilds[st.guild] : null;
@@ -209,6 +219,7 @@ export class VillageScene extends Phaser.Scene {
 
   update(_t: number, dtMs: number) {
     const dt = dtMs / 1000;
+    this.life?.update(dtMs);
     for (const w of this.walkers.values()) {
       const s = w.sprite;
       const next = w.path[0];
