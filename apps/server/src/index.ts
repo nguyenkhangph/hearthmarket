@@ -13,7 +13,7 @@ import { NpcBrain } from './brain/brain.ts';
 import { DayPlanner } from './brain/planner.ts';
 import { OpenAiCompatible, WithFallback } from './brain/llm.ts';
 import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
-import { NearChain, parseRpcUrls } from './chain/near.ts';
+import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
 import { authenticate, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
@@ -91,7 +91,7 @@ if (config.chain === 'near') {
   if (operator) keys[operator] = config.near.oracleKey;
   else log('no ORACLE_KEY: no day sync, world posts or player relays. Run `npm run setup:testnet`.');
   const rpcUrls = parseRpcUrls(config.near.rpcUrl);
-  chain = new NearChain(rpcUrls, keys);
+  chain = withBalances(new NearChain(rpcUrls, keys));
   log(`rpc: ${rpcUrls.join(' , ')}`);
   mirror = new ChainMirror(chain, {
     contract: config.near.contract,
@@ -99,10 +99,39 @@ if (config.chain === 'near') {
     playerAccount: (id) => accounts.get(id) ?? null,
     minDayMs: config.near.daySeconds * 1000,
     maxPerMinute: config.near.maxTxPerMinute,
+    npcCallsPerHour: config.near.npcTxPerHour,
+    batchProduce: config.near.batchProduce,
     log,
   });
+  log(`gas budget: ${config.near.npcTxPerHour || 'unlimited'} calls per NPC per hour, produce ${config.near.batchProduce ? 'batched per day' : 'per tick'}, day sync every ${config.near.daySeconds}s, ${config.near.idleSeconds ? `pause ${config.near.idleSeconds}s after the last player leaves` : 'never pauses'}`);
+  const m = mirror;
+  const checkBalances = () => void m.checkBalances(config.near.lowBalanceNear).catch(() => {});
+  setTimeout(checkBalances, 5_000);
+  setInterval(checkBalances, 10 * 60_000).unref();
 }
 const signer = new NpcSigner(chain, config.near.contract);
+
+// ---------------------------------------------------------------- idle pause
+// Nobody watching = no gas: NPC actions stay in the engine; the first player back re-anchors the chain.
+let idleTimer: ReturnType<typeof setTimeout> | undefined;
+function onPresence(players: number) {
+  if (!mirror || !config.near.idleSeconds) return;
+  if (players > 0) {
+    clearTimeout(idleTimer);
+    idleTimer = undefined;
+    if (!mirror.isActive) {
+      mirror.setActive(true);
+      log('chain: a player is back, NPC actions go on chain again');
+      mirror.startDay(game.village, currentWorldPost());
+    }
+  } else if (mirror.isActive && !idleTimer) {
+    idleTimer = setTimeout(() => {
+      idleTimer = undefined;
+      mirror?.setActive(false);
+      log(`chain: nobody online for ${config.near.idleSeconds}s, NPC actions stay off chain until someone joins`);
+    }, config.near.idleSeconds * 1000);
+  }
+}
 
 const game = new Game(
   { seed: config.seed, world, mirror, worldPost: currentWorldPost, onNewDay: (v) => planner?.onNewDay(v) },
@@ -110,10 +139,14 @@ const game = new Game(
 );
 // sync the chain to the engine right away, not only at the next game day
 mirror?.startDay(game.village, currentWorldPost());
+onPresence(0);
 log(`world=${config.worldSource} brain=${brain.name} chain=${chain.kind} contract=${config.near.contract} login=${google ? 'google' : ''}${config.auth.devLogin ? (google ? '+dev' : 'dev') : ''}`);
 
 // ---------------------------------------------------------------- transport
 const sessions = new Map<WebSocket, Session>();
+const lastAttack = new WeakMap<WebSocket, number>();
+/** times of on-chain red-team proofs in the last hour (each one costs a little gas) */
+const proofs: number[] = [];
 
 const http = createServer((req, res) => {
   res.setHeader('access-control-allow-origin', '*');
@@ -122,7 +155,7 @@ const http = createServer((req, res) => {
   if (req.url === '/api/health') {
     res.end(JSON.stringify({
       ok: true, day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
-      chainStats: mirror?.stats, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
+      chainStats: mirror ? { ...mirror.stats, active: mirror.isActive, balances: mirror.balances } : undefined, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
     }));
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));
@@ -137,7 +170,7 @@ const http = createServer((req, res) => {
 const wss = new WebSocketServer({ server: http });
 wss.on('connection', (ws) => {
   ws.on('message', async (buf) => {
-    let msg: { id?: number; type: string; auth?: HelloAuth; playerId?: string; name?: string; action?: Action; npc?: NpcId; message?: string };
+    let msg: { id?: number; type: string; auth?: HelloAuth; playerId?: string; name?: string; action?: Action; npc?: NpcId; message?: string; attack?: number };
     try {
       msg = JSON.parse(String(buf));
     } catch {
@@ -148,6 +181,7 @@ wss.on('connection', (ws) => {
       try {
         const s = await authenticate(msg.auth, { playerId: msg.playerId, name: msg.name }, authCfg, google);
         sessions.set(ws, s);
+        onPresence(sessions.size);
         accounts.set(s.playerId, s.account);
         game.join(s.playerId, s.name);
         ws.send(JSON.stringify({ type: 'welcome', playerId: s.playerId, name: s.name, account: s.account, auth: s.auth, contract: config.near.contract, chain: chain.kind }));
@@ -170,9 +204,26 @@ wss.on('connection', (ws) => {
         reply({ reply: `${NPC_DEFS[msg.npc].name} is thinking too hard (brain error: ${(e as Error).message}).`, brain: brain.name });
       }
       broadcast();
+    } else if (msg.type === 'redteam' && Number.isInteger(msg.attack)) {
+      const now = Date.now();
+      if (now - (lastAttack.get(ws) ?? 0) < 4000) return reply({ error: 'one attack every 4 seconds' });
+      lastAttack.set(ws, now);
+      proofs.splice(0, proofs.length, ...proofs.filter((t) => now - t < 3_600_000));
+      const proveOnChain = chain.kind === 'near' && proofs.length < config.near.redTeamProofsPerHour;
+      try {
+        const out = await game.redTeam(msg.attack!, session.account, { proveOnChain });
+        if (out.proof) proofs.push(now);
+        reply(out);
+      } catch (e) {
+        reply({ error: (e as Error).message });
+      }
+      broadcast();
     }
   });
-  ws.on('close', () => sessions.delete(ws));
+  ws.on('close', () => {
+    sessions.delete(ws);
+    onPresence(sessions.size);
+  });
 });
 
 function broadcast() {

@@ -18,3 +18,4 @@ export function createVillage(opts: VillageOptions = {}): Village {
   v.setAiDriver(aiDriver((opts.seed ?? 42) + 1));
   return v;
 }
+export * from './redteam.ts';

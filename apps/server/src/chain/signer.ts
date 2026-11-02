@@ -5,6 +5,8 @@ export interface ChainAdapter {
   readonly kind: 'mock' | 'near';
   /** Sends one function call signed by `signer`'s key; resolves with the tx hash, rejects with the contract's error. */
   call(signer: string, contract: string, method: string, args: Record<string, unknown>, tgas?: number): Promise<string>;
+  /** spendable NEAR of an account (balance minus storage); optional */
+  balance?(account: string): Promise<number>;
 }
 
 /** In-memory chain for local runs and tests. Records every call. */
@@ -17,7 +19,8 @@ export class MockChain implements ChainAdapter {
     const err = this.failNext.get(method);
     if (err) {
       this.failNext.delete(method);
-      throw new Error(`Smart contract panicked: ${err}`);
+      // a refused call is still a transaction on chain, with a hash
+      throw Object.assign(new Error(`Smart contract panicked: ${err}`), { txHash: `MockFail${this.calls.length.toString().padStart(6, '0')}Hash` });
     }
     const hash = `Mock${this.calls.length.toString().padStart(6, '0')}Hash`;
     this.calls.push({ signer, contract, method, args, hash });

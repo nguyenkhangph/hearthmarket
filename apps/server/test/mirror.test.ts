@@ -159,3 +159,76 @@ describe('chain mirror: a whole game', () => {
     expect(m.startDay(game.village)).toBe(true);
   });
 });
+
+describe('chain mirror: gas budget', () => {
+  it('sends a day of production as one produce per NPC and item, and settles every feed line with it', async () => {
+    const { m, chain } = mirror({ batchProduce: true });
+    const settled = new Map<string, string>();
+    m.onSettled = (p, h) => settled.set(p, h);
+    const a = m.hook(NPC_DEFS.mike.account, 'produce', { item: 'ore', qty: 5 })!;
+    const b = m.hook(NPC_DEFS.mike.account, 'produce', { item: 'ore', qty: 4 })!;
+    const c = m.hook(NPC_DEFS.jack.account, 'produce', { item: 'timber', qty: 9 })!;
+    expect(txKind(a)).toBe('pending');
+    expect(chain.calls).toHaveLength(0);
+    expect(m.flushProduce()).toBe(2);
+    await m.idle();
+    expect(chain.calls.map((x) => [x.signer, x.method, x.args])).toEqual([
+      [NPC_DEFS.mike.account, 'produce', { item: 'ore', qty: 9 }],
+      [NPC_DEFS.jack.account, 'produce', { item: 'timber', qty: 9 }],
+    ]);
+    expect(settled.get(a)).toBe(settled.get(b));
+    expect(txKind(settled.get(a)!)).toBe('chain');
+    expect(txKind(settled.get(c)!)).toBe('chain');
+  });
+
+  it('caps the batch at the contract\'s daily production cap', async () => {
+    const { m, chain } = mirror({ batchProduce: true });
+    for (let i = 0; i < 4; i++) m.hook(NPC_DEFS.buba.account, 'produce', { item: 'wheat', qty: 5 });
+    m.flushProduce();
+    await m.idle();
+    expect(chain.calls[0].args).toEqual({ item: 'wheat', qty: 12 });
+  });
+
+  it('keeps an NPC within its calls per hour, but never caps order fills or player relays', async () => {
+    let now = 0;
+    const { m } = mirror({ npcCallsPerHour: 2, now: () => now, maxPerMinute: 1000, maxQueue: 100 });
+    const hire = () => m.hook(NPC_DEFS.theo.account, 'hire', { seller: NPC_DEFS.mike.account, item: 'ore', qty: 1, price: 590 });
+    expect(hire()).toMatch(/^pending/);
+    expect(hire()).toMatch(/^pending/);
+    expect(hire()).toBeNull();
+    expect(m.stats.budgeted).toBe(1);
+    // another NPC has its own budget
+    expect(m.hook(NPC_DEFS.chloe.account, 'craft', { item: 'bread', crafts: 1 })).toMatch(/^pending/);
+    // escrow moves are never skipped
+    m.hook(playerSigner('khang'), 'place_order', { order_id: 1, item: 'sword', qty: 1, max_price: 2000, deadline_days: 3 });
+    await m.idle();
+    expect(m.hook(NPC_DEFS.theo.account, 'fill_order', { order_id: 1, qty: 1, price: 1900 })).toMatch(/^pending/);
+    expect(m.hook(playerSigner('khang'), 'market_buy', { item: 'wheat', qty: 1, max_price: 210 })).toMatch(/^pending/);
+    now += 3_600_001;
+    expect(hire()).toMatch(/^pending/);
+  });
+
+  it('spends no gas while paused, and re-anchors the chain when a player comes back', () => {
+    let now = 0;
+    const { m, chain } = mirror({ minDayMs: 600_000, now: () => now });
+    const game = new Game({ seed: 3, mirror: m }, new NpcBrain(null), new NpcSigner(chain, CONTRACT), chain);
+    expect(m.startDay(game.village)).toBe(true);
+    m.setActive(false);
+    expect(m.hook(NPC_DEFS.mike.account, 'produce', { item: 'ore', qty: 3 })).toBeNull();
+    expect(m.stats.paused).toBe(1);
+    now += 1000;
+    expect(m.startDay(game.village)).toBe(false);
+    m.setActive(true);
+    now += 1000; // well inside minDayMs: resuming forces a fresh reconcile anyway
+    expect(m.startDay(game.village)).toBe(true);
+  });
+
+  it('warns about accounts that are running out of gas', async () => {
+    const lines: string[] = [];
+    const chain = Object.assign(new MockChain(), { balance: async (a: string) => (a === NPC_DEFS.theo.account ? 0.002 : 0.4) });
+    const m = new ChainMirror(chain, { contract: CONTRACT, operator: OPERATOR, playerAccount: () => null, log: (l) => lines.push(l) });
+    const b = await m.checkBalances(0.1);
+    expect(b[NPC_DEFS.theo.account]).toBe(0.002);
+    expect(lines.filter((l) => l.startsWith('LOW BALANCE'))).toEqual([expect.stringContaining(NPC_DEFS.theo.account)]);
+  });
+});

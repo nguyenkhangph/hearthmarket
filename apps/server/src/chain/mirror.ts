@@ -28,6 +28,14 @@ export interface MirrorOptions {
   maxPerMinute?: number;
   /** minimum real time between two reconcile calls */
   minDayMs?: number;
+  /**
+   * Gas budget. Each NPC sends at most this many calls per real hour (0 = no cap). Order
+   * fills and player relays are never capped: they move escrow. Skipped NPC actions stay
+   * in the engine and the next `reconcile` re-anchors the chain.
+   */
+  npcCallsPerHour?: number;
+  /** collect each NPC's production over a game day and send it as one `produce` per item */
+  batchProduce?: boolean;
   /** a slow or offline chain must not stall the village */
   log?: (line: string) => void;
   now?: () => number;
@@ -65,7 +73,15 @@ export class ChainMirror {
   private registrationQueued = new Set<string>();
   /** order ids are unique per server run */
   private readonly orderBase: number;
-  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0 };
+  /** NPC call times in the last hour, per signer (gas budget) */
+  private npcRecent = new Map<string, number[]>();
+  /** production collected this game day: signer -> item -> qty, and the feed placeholders it covers */
+  private produceBatch = new Map<string, Map<string, { qty: number; placeholders: string[] }>>();
+  /** batch placeholder -> member placeholders that settle with it */
+  private aliases = new Map<string, string[]>();
+  /** false while nobody is playing: NPC actions stay in the engine, no gas is spent */
+  private active = true;
+  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0 };
   /** called with (placeholder, final hash or `failed:...`) */
   onSettled: (placeholder: string, hash: string) => void = () => {};
 
@@ -85,10 +101,131 @@ export class ChainMirror {
   // ------------------------------------------------------------------ engine hook
   /** `Village.chainHook`: returns a placeholder hash, or null to keep the action off chain. */
   readonly hook = (signer: string, method: string, args: Record<string, unknown>): string | null => {
+    const npc = NPCS.some((id) => NPC_DEFS[id].account === signer);
+    if (npc && !this.active) {
+      this.stats.paused++;
+      return null;
+    }
     const calls = this.translate(signer, method, args);
     if (!calls) return null;
+    if (npc && method === 'produce' && this.opts.batchProduce) return this.collect(calls[0]);
+    if (npc && method !== 'fill_order' && !this.withinBudget(signer)) {
+      this.stats.budgeted++;
+      return null;
+    }
     return this.enqueue(calls);
   };
+
+  // ------------------------------------------------------------------ gas budget
+  /** Pause NPC mirroring while nobody is connected; resuming re-anchors the chain at the next day start. */
+  setActive(active: boolean) {
+    if (active && !this.active) this.lastDayAt = -Infinity;
+    this.active = active;
+  }
+
+  get isActive() {
+    return this.active;
+  }
+
+  private withinBudget(signer: string): boolean {
+    const cap = this.opts.npcCallsPerHour ?? 0;
+    if (!cap) return true;
+    const now = (this.opts.now ?? Date.now)();
+    const times = (this.npcRecent.get(signer) ?? []).filter((t) => now - t < 3_600_000);
+    if (times.length >= cap) {
+      this.npcRecent.set(signer, times);
+      return false;
+    }
+    times.push(now);
+    this.npcRecent.set(signer, times);
+    return true;
+  }
+
+  private collect(c: Call): string {
+    const item = String(c.args.item);
+    const bySigner = this.produceBatch.get(c.signer) ?? new Map();
+    const entry = bySigner.get(item) ?? { qty: 0, placeholders: [] };
+    const ph = `pendingb${(this.pendingN++).toString().padStart(6, '0')}x`;
+    entry.qty += Number(c.args.qty);
+    entry.placeholders.push(ph);
+    bySigner.set(item, entry);
+    this.produceBatch.set(c.signer, bySigner);
+    this.stats.batched++;
+    return ph;
+  }
+
+  /** Sends the production collected since the last call: one `produce` per NPC and item (capped at the contract's 12). */
+  flushProduce(): number {
+    let sent = 0;
+    for (const [signer, items] of this.produceBatch) {
+      for (const [item, { qty, placeholders }] of items) {
+        const ph = this.enqueue([{ signer, method: 'produce', args: { item, qty: Math.min(qty, 12) }, tgas: DEFAULT_TGAS }]);
+        if (ph) {
+          this.aliases.set(ph, placeholders);
+          sent++;
+        } else {
+          for (const p of placeholders) this.onSettled(p, 'local-not-sent');
+        }
+      }
+    }
+    this.produceBatch.clear();
+    return sent;
+  }
+
+  private settle(placeholder: string, hash: string) {
+    this.onSettled(placeholder, hash);
+    for (const p of this.aliases.get(placeholder) ?? []) this.onSettled(p, hash);
+    this.aliases.delete(placeholder);
+  }
+
+  // ------------------------------------------------------------------ red team
+  /**
+   * Sends an attack straight to the contract with the NPC's own key, skipping the engine,
+   * to show the contract refusing it on chain. The key's method list still applies: a
+   * method that is not on the key is never signed. Resolves with the tx hash (a refused
+   * call is still a transaction on chain) and the contract's reason.
+   */
+  async prove(signer: string, method: string, args: Record<string, unknown>): Promise<{ ok: boolean; hash?: string; reason: string }> {
+    const npc = NPCS.find((id) => NPC_DEFS[id].account === signer);
+    if (!npc || !(NPC_KEY_METHODS[npc] as readonly string[]).includes(method)) return { ok: false, reason: `not on the ${npc ?? 'operator'} key: never signed` };
+    this.stats.sent++;
+    try {
+      const hash = await this.chain.call(signer, this.opts.contract, method, args, DEFAULT_TGAS);
+      this.stats.ok++;
+      this.log(`red team: contract ACCEPTED ${signer} ${method} tx=${hash}`);
+      return { ok: true, hash, reason: 'accepted' };
+    } catch (e) {
+      this.stats.failed++;
+      const err = e as Error & { txHash?: string };
+      const reason = err.message.replace(/^.*panicked: /, '').replace(/^Smart contract panicked: /, '').slice(0, 120);
+      this.log(`red team: contract refused ${signer} ${method}${err.txHash ? ` tx=${err.txHash}` : ''}: ${reason}`);
+      return { ok: false, hash: err.txHash, reason };
+    }
+  }
+
+  // ------------------------------------------------------------------ balances
+  /**
+   * Spendable NEAR per signing account (balance minus storage), and a warning for any
+   * account below `min` NEAR. Needs an adapter that can read balances.
+   */
+  async checkBalances(min = 0.1): Promise<Record<string, number>> {
+    const read = this.chain.balance?.bind(this.chain);
+    if (!read) return {};
+    const out: Record<string, number> = {};
+    const accounts = [...NPCS.map((id) => NPC_DEFS[id].account), ...(this.opts.operator ? [this.opts.operator] : [])];
+    for (const a of accounts) {
+      try {
+        out[a] = await read(a);
+        if (out[a] < min) this.log(`LOW BALANCE ${a}: ${out[a].toFixed(3)} NEAR spendable. Top it up (docs/testnet.md, "Gas").`);
+      } catch (e) {
+        this.log(`balance check ${a} failed: ${(e as Error).message}`);
+      }
+    }
+    this.balances = out;
+    return out;
+  }
+
+  balances: Record<string, number> = {};
 
   /** `Village.badgeHook`: mints a soulbound badge for a human player. */
   readonly badgeHook = (playerId: string, b: { kind: string; title: string; description: string }): string | null => {
@@ -186,7 +323,9 @@ export class ChainMirror {
    * Rate-limited by real time (`minDayMs`), so a very fast clock does not flood the chain.
    */
   startDay(v: Village, world?: WorldPostInput): boolean {
+    if (this.opts.batchProduce) this.flushProduce();
     const now = (this.opts.now ?? Date.now)();
+    if (!this.active) return false;
     if (!this.opts.operator || now - this.lastDayAt < (this.opts.minDayMs ?? 50_000)) return false;
     this.lastDayAt = now;
     const s = v.s;
@@ -268,12 +407,12 @@ export class ChainMirror {
       .then(
         (hash) => {
           this.stats.ok++;
-          this.onSettled(placeholder, hash);
+          this.settle(placeholder, hash);
         },
         (e: Error) => {
           this.stats.failed++;
           this.log(`chain FAIL ${signer} ${calls.map((c) => c.method).join('+')}: ${e.message}`);
-          this.onSettled(placeholder, `failed:${e.message.replace(/^.*panicked: /, '').slice(0, 60)}`);
+          this.settle(placeholder, `failed:${e.message.replace(/^.*panicked: /, '').slice(0, 60)}`);
         },
       )
       .finally(() => {

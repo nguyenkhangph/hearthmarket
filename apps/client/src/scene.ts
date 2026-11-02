@@ -3,6 +3,7 @@ import { NPCS, NPC_DEFS, type NpcId, type FeedEvent } from '@hearth/economy';
 import { cf, IMAGES, NPC_SHEETS, SHEETS, THEO_LAYERS, TILE, TILESETS } from './assets.ts';
 import { BRIDGE, buildGround, MAP_H, MAP_W, PROPS, wheatTiles, type Ground } from './map.ts';
 import type { GameSource } from './source.ts';
+import { ART, makeFallbackTextures } from './fallbackArt.ts';
 
 const ROAD_ROW = 17;
 const WALK_SPEED = 42; // px per second
@@ -29,6 +30,7 @@ export class VillageScene extends Phaser.Scene {
   }
 
   preload() {
+    if (!ART.ok) return; // no licensed pack here: stand-in textures are drawn in create()
     for (const [k, p] of Object.entries(TILESETS)) this.load.image(k, cf(p));
     for (const [k, p] of Object.entries(IMAGES)) this.load.image(k, cf(p));
     for (const [k, s] of Object.entries(SHEETS)) this.load.spritesheet(k, cf(s.path), { frameWidth: s.w, frameHeight: s.h });
@@ -37,6 +39,7 @@ export class VillageScene extends Phaser.Scene {
   }
 
   create() {
+    if (!ART.ok) makeFallbackTextures(this);
     this.drawGround();
     this.placeProps();
     this.composeTheo();

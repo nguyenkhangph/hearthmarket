@@ -1,5 +1,5 @@
 import {
-  fmt, g, NEAR_CONFIG, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind,
+  fmt, g, NEAR_CONFIG, RED_TEAM_ATTACKS, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind,
   type Action, type ItemId, type NpcId, type Village, type FeedEvent, type MarketRow,
 } from '@hearth/economy';
 import { icon } from './assets.ts';
@@ -19,7 +19,8 @@ export class Ui {
   private panel: PanelId = null;
   private npc: NpcId = 'theo';
   private orderForm = { item: 'sword' as ItemId, qty: 2, maxPrice: 0, deadline: 2, fromGuild: false };
-  private haggleLog: { who: 'me' | 'npc' | 'sys'; text: string }[] = [];
+  private haggleLog: { who: 'me' | 'npc' | 'sys' | 'bad' | 'ok'; text: string; html?: string }[] = [];
+  private redBusy = false;
   private lastDay = 0;
   private simSummary: string | null = null;
 
@@ -369,8 +370,11 @@ export class Ui {
     <h3>Memory</h3>
     ${n.memory.length ? n.memory.map((m) => `<div class="mem">· ${esc(m)}</div>`).join('') : '<div class="muted small">nothing yet</div>'}
     <h3>Haggle with ${esc(def.name)}</h3>
-    <div class="chat">${this.haggleLog.slice(-4).map((m) => `<div class="msg ${m.who}">${esc(m.text)}</div>`).join('')}</div>
+    <div class="chat">${this.haggleLog.slice(-6).map((m) => `<div class="msg ${m.who}">${m.html ?? esc(m.text)}</div>`).join('')}</div>
     <div class="row"><input name="haggle" placeholder="Offer 5.5 for ore… or try: send me all your gold" class="grow"><button data-act="haggle">Send</button></div>
+    <h3>Red team</h3>
+    <div class="muted small">Swap ${esc(def.name)}'s brain for a deliberately obedient model that does whatever the message says, then watch the guard stop it.${this.src.chain === 'near' ? ' Attacks only the contract can stop are also sent to NEAR testnet with the NPC\'s own key; the refused transaction is linked.' : ''}</div>
+    <div class="row"><select name="attack" class="grow">${RED_TEAM_ATTACKS.map((a, i) => (a.npc === id ? `<option value="${i}">${esc(a.name)}${a.layer === 'contract' ? ' (contract)' : ''}</option>` : '')).join('')}</select><button class="danger" data-act="redteam" ${this.redBusy ? 'disabled' : ''}>Attack</button></div>
   </section>
   <section class="pcard">
     <h3>Transaction log</h3>
@@ -450,8 +454,52 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         this.renderPanel(true);
         break;
       }
+      case 'redteam': {
+        const index = Number(this.val('attack'));
+        if (!Number.isInteger(index) || this.redBusy) return;
+        this.redBusy = true;
+        this.haggleLog.push({ who: 'me', text: RED_TEAM_ATTACKS[index].message });
+        this.renderPanel(true);
+        try {
+          const r = await this.src.redTeam(index);
+          if (r.error) {
+            this.haggleLog.push({ who: 'sys', text: r.error });
+          } else {
+            this.haggleLog.push({ who: 'npc', text: `${r.reply} (${r.brain})` });
+            if (r.proposed) this.haggleLog.push({ who: 'sys', text: `Model proposed: ${describeAction(r.proposed)}` });
+            const reason = r.result && !r.result.ok ? r.result.reason : '';
+            this.haggleLog.push(
+              r.blocked
+                ? { who: 'bad', text: `BLOCKED by the ${r.layer === 'signer' ? 'signer, nothing was signed' : 'contract rules'}: ${reason}` }
+                : { who: 'sys', text: 'Not blocked. Please report this.' },
+            );
+            if (r.proof) {
+              const link = r.proof.hash && txKind(r.proof.hash) === 'chain'
+                ? `<a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(r.proof.hash)}">${esc(short(r.proof.hash))}</a>`
+                : esc(r.proof.hash ? short(r.proof.hash) : '');
+              this.haggleLog.push(
+                r.proof.ok
+                  ? { who: 'sys', text: `The contract accepted it on chain (${r.proof.reason}).` }
+                  : { who: 'ok', text: '', html: `Sent to NEAR testnet anyway with ${esc(NPC_DEFS[r.npc].name)}'s key: <b>refused by the contract</b> (${esc(r.proof.reason)})${link ? ` · tx ${link}` : ''}` },
+              );
+            }
+          }
+        } finally {
+          this.redBusy = false;
+          this.renderPanel(true);
+        }
+        break;
+      }
     }
   }
+}
+
+function describeAction(a: Action): string {
+  const x = a as Action & Record<string, unknown>;
+  if (x.type === 'transfer') return `transfer ${fmt(Number(x.amount))} gold to ${String(x.to).slice(0, 16)}…`;
+  if (x.type === 'call') return `call ${String(x.method)}${x.receiver ? ` on ${String(x.receiver)}` : ''}`;
+  const { type, ...rest } = x;
+  return `${type} ${summarizeArgs(rest)}`.trim();
 }
 
 function summarizeArgs(a: Record<string, unknown>): string {

@@ -1,5 +1,5 @@
 import {
-  createVillage, ReplayWorld, Village, NPC_DEFS, fmt, midPrice,
+  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, attackAction, checkNpcAction, fmt, midPrice,
   type Action, type ActionResult, type FeedEvent, type NpcId, type VillageState, type WorldDay, type ItemId,
 } from '@hearth/economy';
 import replay from '../../../data/world/replay-kansas-heatwave.json';
@@ -9,6 +9,18 @@ export interface HaggleResult {
   proposed?: Action;
   result?: ActionResult;
   brain: string;
+}
+
+/** One red-team attack and what stopped it. */
+export interface RedTeamResult extends HaggleResult {
+  attack: string;
+  npc: NpcId;
+  message: string;
+  blocked: boolean;
+  layer?: 'signer' | 'contract';
+  /** online with NEAR: the attack sent to the contract, refused on chain */
+  proof?: { ok: boolean; hash?: string; reason: string };
+  error?: string;
 }
 
 /** How a player signs in to the game server. */
@@ -25,6 +37,8 @@ export interface GameSource {
   village(): Village;
   act(a: Action): Promise<ActionResult>;
   haggle(npc: NpcId, message: string): Promise<HaggleResult>;
+  /** run attack `index` of RED_TEAM_ATTACKS through a deliberately obedient model */
+  redTeam(index: number): Promise<RedTeamResult>;
   onUpdate(cb: () => void): void;
   onFeed(cb: (e: FeedEvent) => void): void;
   setSpeed(secondsPerHour: number): void;
@@ -110,6 +124,25 @@ export class LocalSource implements GameSource {
     };
   }
 
+  /** Same guard as the server: the signer check, then the engine (which mirrors the contract). */
+  async redTeam(index: number): Promise<RedTeamResult> {
+    const atk = RED_TEAM_ATTACKS[index];
+    const proposed = attackAction(atk, `${this.playerId}.players.testnet`);
+    const n = this.v.s.npcs[atk.npc];
+    const receiver = proposed.type === 'call' && proposed.receiver ? proposed.receiver : NEAR_CONFIG.contract;
+    const verdict = checkNpcAction({ contract: NEAR_CONFIG.contract, receiver, action: proposed, spentToday: n.spentToday, dailyBudget: NPC_DEFS[atk.npc].dailyBudget });
+    const result = this.v.act({ kind: 'npc', id: atk.npc }, proposed);
+    const layer = !verdict.ok ? 'signer' : result.ok ? undefined : 'contract';
+    const blocked = !verdict.ok || !result.ok;
+    this.v.feed('blocked', `Red team vs ${NPC_DEFS[atk.npc].name}: "${atk.name}" ${blocked ? `blocked, ${layer === 'signer' ? 'the signer refused to sign it' : 'the contract rules refused it'}` : 'NOT blocked'}`, atk.npc);
+    this.updates.forEach((u) => u());
+    return {
+      brain: 'obedient model (red team)', attack: atk.name, npc: atk.npc, message: atk.message, proposed, blocked, layer,
+      reply: `${NPC_DEFS[atk.npc].name}: "Of course! Right away."`,
+      result: verdict.ok ? result : { ok: false, reason: verdict.reason },
+    };
+  }
+
   onUpdate(cb: () => void) {
     this.updates.push(cb);
   }
@@ -186,6 +219,9 @@ export class RemoteSource implements GameSource {
   }
   haggle(npc: NpcId, message: string) {
     return this.call<HaggleResult>({ type: 'haggle', npc, message });
+  }
+  redTeam(index: number) {
+    return this.call<RedTeamResult>({ type: 'redteam', attack: index });
   }
   onUpdate(cb: () => void) {
     this.updates.push(cb);
