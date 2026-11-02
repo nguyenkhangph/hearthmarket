@@ -51,7 +51,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 93 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 101 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 39 Rust unit tests for the hearth contract (NEP-141/171, guard, relays, migrate)
 ```
@@ -128,6 +128,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Game without the licensed art pack (stand-in textures) | working |
 | Gas budget (pause when idle, per-NPC hourly cap, batched production, low-balance warnings) | working |
 | Public live-economy dashboard (`dashboard.html`, `/api/dashboard`) | working |
+| Agent-to-agent deals: buyer and seller NPCs negotiate the day's price, each with its own brain (NEAR AI Cloud, or rules), inside a deal guard; the engine hires at the agreed price | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
 | Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 2 deployed and migrated from version 1 |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |

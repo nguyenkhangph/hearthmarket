@@ -181,3 +181,6 @@ button.danger:disabled { opacity: .5; cursor: wait; }
 .art-fallback { display: none; }
 body[data-art='fallback'] .art-credit { display: none; }
 body[data-art='fallback'] .art-fallback { display: inline; }
+
+.deal-mini { background: #161925; border-left: 3px solid var(--up); border-radius: 6px; padding: 6px 8px; margin: 4px 0; }
+.deal-mini.no-deal { border-left-color: var(--down); }

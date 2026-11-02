@@ -9,6 +9,7 @@ import {
 } from './market.ts';
 import { checkNpcAction } from './policy.ts';
 import { checkPlan, describePlan, type NpcPlan } from './plan.ts';
+import { checkDeal, describeDeal, DEAL_BAND, DEAL_MAX_ROUNDS, type Deal, type DealRound } from './deals.ts';
 import { applyWorldDay, initialWorld, SyntheticWorld, type WorldDay } from './world.ts';
 import type {
   Action, ActionResult, Actor, DailyStats, DiaryEntry, FeedEvent, FeedKind, Guild, Inventory, NpcState,
@@ -453,6 +454,9 @@ export class Village {
     const avail = Math.min(qty, seller.stock[item] - this.reservedFor(sellerId, item));
     if (avail <= 0) return 0;
     const mid = midPrice(item, this.s.market.stock[item]);
+    const deal = this.dealFor(buyer.id, sellerId, item);
+    if (deal?.status === 'no-deal') return 0; // the agents could not agree today: market instead
+    if (deal) return this.hireUnderDeal(buyer, seller, item, Math.min(avail, deal.maxQty - deal.used), deal, mid);
     const scarcity = item === 'ore' ? (1 - seller.mineHealth) * 0.3 : 0;
     let offer = Math.round(mid * 0.92);
     let ask = Math.round(mid * (1.08 + scarcity));
@@ -511,6 +515,77 @@ export class Village {
     });
     seller.memory = [`${NPC_DEFS[buyer.id].name} paid ${fmt(price)} per ${item} on day ${this.day}`, ...seller.memory].slice(0, 5);
     return avail;
+  }
+
+  // ---------------------------------------------------------------- agent deals
+  /** Today's deal between two agents for an item, if they negotiated one. */
+  dealFor(buyer: NpcId, seller: NpcId, item: ItemId): Deal | undefined {
+    return (this.s.deals ?? []).filter((d) => d.day === this.day && d.buyer === buyer && d.seller === seller && d.item === item).at(-1);
+  }
+
+  /**
+   * Records a negotiation between two agents (LLM or rules). The deal guard decides what
+   * the engine may use: a price inside the band around the market, a capped quantity.
+   * A deal never moves gold by itself; the buyer's `hire` later does, through the guard.
+   */
+  setDeal(input: { buyer: NpcId; seller: NpcId; item: ItemId; agreed: boolean; price?: number; maxQty?: number; by: string; rounds: DealRound[] }): Deal {
+    const mid = midPrice(input.item, this.s.market.stock[input.item]);
+    const v = checkDeal(input, mid);
+    const deal: Deal = {
+      id: this.s.nextId++, day: this.day, buyer: input.buyer, seller: input.seller, item: input.item,
+      status: v.ok ? 'agreed' : 'no-deal', price: v.ok ? v.price : undefined, maxQty: v.ok ? v.maxQty : 0, used: 0,
+      by: input.by, rounds: input.rounds.slice(0, DEAL_MAX_ROUNDS * 2 + 1).map((r) => ({ ...r, say: String(r.say ?? '').slice(0, 240) })),
+      guard: v.ok ? v.notes : input.agreed ? [`refused: ${v.reason}`] : [],
+    };
+    const deals = (this.s.deals ??= []);
+    deals.push(deal);
+    if (deals.length > 40) deals.splice(0, deals.length - 40);
+    this.feed('deal', describeDeal(deal) + (deal.guard.length ? ` · deal guard: ${deal.guard.join('; ')}` : ''), input.buyer);
+    const last = deal.rounds.filter((r) => r.who === input.buyer).at(-1)?.say ?? '';
+    this.diary({
+      npc: input.buyer,
+      goal: `buy ${input.item} from ${NPC_DEFS[input.seller].name} for today`,
+      saw: `market ${fmt(mid)} per ${input.item}, ${NPC_DEFS[input.seller].name} holds ${this.s.npcs[input.seller].stock[input.item]}`,
+      think: last || '(no words)',
+      act: deal.status === 'agreed' ? `deal: ${fmt(deal.price!)} per ${input.item}, up to ${deal.maxQty}` : 'no deal: buy at the market',
+      guard: deal.guard.length ? `deal guard: ${deal.guard.join('; ')}` : `deal guard: price within ${DEAL_BAND.min * 100}–${DEAL_BAND.max * 100}% of market · deals never move gold`,
+    });
+    return deal;
+  }
+
+  private hireUnderDeal(buyer: NpcState, seller: NpcState, item: ItemId, qty: number, deal: Deal, mid: Gold): number {
+    if (qty <= 0) return 0;
+    const price = deal.price!;
+    const total = price * qty;
+    const f = fee(total);
+    if (total + f > buyer.gold) return 0;
+    const action: Action = { type: 'hire', seller: seller.id, item, qty, price };
+    const spentBefore = buyer.spentToday;
+    if (!this.guarded(buyer, action)) {
+      this.feed('blocked', `${NPC_DEFS[buyer.id].name}'s deal blocked: over daily budget`, buyer.id);
+      return 0;
+    }
+    buyer.gold -= total + f;
+    buyer.spentToday += total + f;
+    seller.gold += total;
+    seller.stock[item] -= qty;
+    buyer.stock[item] += qty;
+    deal.used += qty;
+    this.takeFee(f);
+    this.s.ledger.volume += total;
+    const tx = this.tx(NPC_DEFS[buyer.id].account, 'hire', { seller: NPC_DEFS[seller.id].account, item, qty, price });
+    this.feed('deal', `${NPC_DEFS[seller.id].name} delivers ${qty} ${item} at the agreed ${fmt(price)} · tx ${short(tx)}`, seller.id, tx);
+    this.diary({
+      npc: buyer.id,
+      goal: `get ${item} for today's work`,
+      saw: `market ${fmt(mid)}, deal with ${NPC_DEFS[seller.id].name} at ${fmt(price)} (${deal.by})`,
+      think: deal.rounds.filter((r) => r.who === buyer.id).at(-1)?.say || 'use the agreed price',
+      act: `hire(${seller.id}, ${qty} ${item}, ${fmt(total)} gold)`,
+      tx,
+      guard: `spent ${fmt(spentBefore + total + f, 0)}/${fmt(NPC_DEFS[buyer.id].dailyBudget, 0)} today · method allowed`,
+    });
+    seller.memory = [`${NPC_DEFS[buyer.id].name} paid the agreed ${fmt(price)} per ${item} on day ${this.day}`, ...seller.memory].slice(0, 5);
+    return qty;
   }
 
   private produceAll() {
