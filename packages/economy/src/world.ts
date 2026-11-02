@@ -126,12 +126,12 @@ export function applyWorldDay(prev: WorldState, day: WorldDay, dayIndex: number)
   for (const d of Object.values(ITEM_DEFS)) {
     if (!d.world) continue;
     const imp = d.id === 'tools' ? (impactOf('ore') + impactOf('timber')) / 2 : impactOf(d.id);
-    price[d.id] = Math.round(d.base * (1 + imp));
+    price[d.id] = Math.round(d.base * (1 + imp) * (prev.fx?.factor ?? 1));
   }
   const ship = regions.find((r) => r.item === 'shipping')!;
   const shippingBps = Math.round(RULES.shippingBps * (1 + ship.impact * 2.5));
 
-  return { day: dayIndex, source: day.source, regions, price, shippingBps };
+  return { day: dayIndex, source: day.source, regions, price, shippingBps, ...(prev.fx ? { fx: prev.fx } : {}) };
 }
 
 /** Deterministic synthetic weather: normal days with occasional multi-day events. */

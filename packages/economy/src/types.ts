@@ -118,6 +118,17 @@ export interface WorldState {
   /** world price per unit before shipping, centigold */
   price: Partial<Record<ItemId, Gold>>;
   shippingBps: number;
+  /** exchange rate from a real market (NEAR Intents): world prices are multiplied by `factor` */
+  fx?: WorldFx;
+}
+
+export interface WorldFx {
+  /** multiplier on world prices in village gold, kept within 0.9-1.1 */
+  factor: number;
+  /** what the factor comes from, e.g. "XAUT 3872.42 USD" */
+  quote: string;
+  source: string;
+  at: string;
 }
 
 export interface MarketState {

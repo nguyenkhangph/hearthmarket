@@ -24,7 +24,7 @@ type Dash = {
   market: { item: string; name: string; village: number; world?: number; change24h: number; stock: number; target: number; history: number[] }[];
   supply: { day: number; gold: number; index: number }[];
   flows: Record<'exports' | 'adventurers' | 'quests' | 'feeBurn' | 'imports' | 'upkeep' | 'volume', number>;
-  world: { regions: { name: string; headline: string; severity: number; forecast?: string }[]; shippingBps: number; source: string };
+  world: { regions: { name: string; headline: string; severity: number; forecast?: string }[]; shippingBps: number; source: string; fx?: { factor: number; quote: string; source: string; at: string } };
   npcs: { id: string; name: string; title: string; account: string; gold: number; stockValue: number; netWorth: number; spentToday: number; dailyBudget: number; think: string; act: string; guard: string; diaryTx?: string; planBy?: string; nearBalance?: number; recentChainTxs: number; history: number[] }[];
   guilds: { name: string; members: number; fund: number; ai: boolean }[];
   orders: { open: number; filled: number };
@@ -145,6 +145,7 @@ function render(d: Dash) {
   <h2>World today</h2>
   ${d.world.regions.map((r) => `<div class="region"><div class="sev" style="--s:${Math.min(1, r.severity)}"></div><div><b>${esc(r.name)}</b> <span class="small">${esc(r.headline)}</span>${r.forecast ? `<div class="muted small">forecast: ${esc(r.forecast)}</div>` : ''}</div></div>`).join('')}
   <div class="muted small">Shipping ${pct(d.world.shippingBps / 10_000)} · ${esc(d.world.source)}</div>
+  ${d.world.fx ? `<div class="small" style="margin-top:6px">World money <b class="mono">×${d.world.fx.factor.toFixed(3)}</b>: ${esc(d.world.fx.quote)} from ${esc(d.world.fx.source)} <span class="muted">(${esc(d.world.fx.at)})</span></div>` : ''}
   <h2>Guilds</h2>
   ${d.guilds.slice(0, 6).map((g) => `<div class="kv small"><span><b>${esc(g.name)}</b> ${g.ai ? '<span class="tag">AI</span>' : ''} <span class="muted">${g.members} members</span></span><span class="mono gold">${gold(g.fund, 0)}</span></div>`).join('') || '<div class="muted small">no guilds yet</div>'}
 </section>

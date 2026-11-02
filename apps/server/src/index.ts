@@ -17,6 +17,7 @@ import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
 import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
+import { fetchIntentsReading, type IntentsReading } from './world/intents.ts';
 import { dashboardView, type RedTeamStats } from './dashboard.ts';
 import { authenticate, claimKey, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
 
@@ -57,11 +58,14 @@ if (config.worldSource === 'open-meteo') {
   inner = new ReplayWorld(replayDays);
 }
 const world = new Tap(inner);
+let fx: IntentsReading | undefined;
+const withFx = (p: WorldPostInput): WorldPostInput =>
+  fx ? { ...p, source: `${p.source} · world money: ${fx.quote} from ${fx.source} (payload sha256 ${fx.sha256}), factor ${fx.factor.toFixed(3)}` } : p;
 const currentWorldPost = (): WorldPostInput | undefined => {
-  if (om?.latestPost && world.last?.source === 'open-meteo') return om.latestPost;
+  if (om?.latestPost && world.last?.source === 'open-meteo') return withFx(om.latestPost);
   if (!world.last) return undefined;
   const label = config.worldSource === 'replay' ? `replay:${config.worldReplayFile} (scripted demo week, not live data)` : 'synthetic (generated, not live data)';
-  return worldPost(world.last, JSON.stringify(world.last), label);
+  return withFx(worldPost(world.last, JSON.stringify(world.last), label));
 };
 
 // ---------------------------------------------------------------- brain
@@ -144,6 +148,21 @@ const game = new Game(
   } },
   brain, signer, chain,
 );
+// world money from NEAR Intents (read-only quote of tokenized gold)
+if (config.worldFx === 'near-intents') {
+  const readFx = async () => {
+    try {
+      fx = await fetchIntentsReading();
+      const applied = game.village.setWorldFx(fx);
+      log(`near intents: ${fx.quote}, world prices x${applied.factor.toFixed(3)}`);
+    } catch (e) {
+      log(`near intents unavailable, keeping the last rate: ${(e as Error).message}`);
+    }
+  };
+  await readFx();
+  setInterval(() => void readFx(), config.worldFxMinutes * 60_000).unref();
+}
+
 // sync the chain to the engine right away, not only at the next game day
 mirror?.startDay(game.village, currentWorldPost());
 onPresence(0);
