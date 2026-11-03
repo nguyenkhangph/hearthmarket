@@ -1,6 +1,6 @@
 import {
   createVillage, ReplayWorld, NPC_DEFS, RED_TEAM_ATTACKS, attackAction, contractCallFor, obedientProposal, short,
-  type Action, type ActionResult, type NpcId, type Village, type WorldDay, type WorldSource,
+  type Action, type ActionResult, type ItemId, type NpcId, type Village, type WorldDay, type WorldSource,
 } from '@hearth/economy';
 import { NpcBrain } from './brain/brain.ts';
 import { ObedientLlm } from './brain/llm.ts';
@@ -10,6 +10,8 @@ import type { ChainMirror, WorldPostInput } from './chain/mirror.ts';
 export interface HaggleOutcome {
   reply: string;
   brain: string;
+  /** a sale the NPC agreed to: placed as the player's order and filled by the NPC's key */
+  deal?: { item: string; qty: number; price: number; ok: boolean; reason?: string; tx?: string };
   proposed?: Action;
   result?: ActionResult & { layer?: 'signer' | 'contract' };
 }
@@ -73,19 +75,25 @@ export class Game {
    * the signer (function-call key rules + budget) and the contract (the engine mirrors the
    * contract's checks; with CHAIN=near the contract checks it again). Either layer can block it.
    */
-  async haggle(npc: NpcId, message: string, brain: NpcBrain = this.brain): Promise<HaggleOutcome> {
+  async haggle(npc: NpcId, message: string, brain: NpcBrain = this.brain, playerId?: string): Promise<HaggleOutcome> {
     const p = await brain.haggle(this.village, npc, message);
-    if (!p.action) return { reply: p.reply, brain: p.brain };
+    const deal = p.deal && playerId ? this.settleDeal(npc, playerId, p.deal) : undefined;
+    if (!p.action) return { reply: p.reply, brain: p.brain, deal };
     const n = this.village.s.npcs[npc];
     const verdict = this.signer.check(npc, p.action, n.spentToday);
     if (!verdict.ok) {
       // log the refusal in the village exactly as the contract would; nothing is signed
       this.village.npcAct(npc, p.action);
-      return { reply: p.reply, brain: p.brain, proposed: p.action, result: { ok: false, reason: verdict.reason, layer: 'signer' } };
+      return { reply: p.reply, brain: p.brain, deal, proposed: p.action, result: { ok: false, reason: verdict.reason, layer: 'signer' } };
     }
     // accepted by the signer: the engine applies it and, online, the mirror signs it with the NPC key
     const r = this.village.npcAct(npc, p.action);
-    return { reply: p.reply, brain: p.brain, proposed: p.action, result: r.ok ? r : { ...r, layer: 'contract' } };
+    return { reply: p.reply, brain: p.brain, deal, proposed: p.action, result: r.ok ? r : { ...r, layer: 'contract' } };
+  }
+
+  private settleDeal(npc: NpcId, playerId: string, d: { item: ItemId; qty: number; price: number }): NonNullable<HaggleOutcome['deal']> {
+    const r = this.village.sellToPlayer(npc, playerId, d.item, d.qty, d.price);
+    return { item: d.item, qty: d.qty, price: d.price, ok: r.ok, reason: r.ok ? undefined : r.reason, tx: r.ok ? r.tx : undefined };
   }
 
   /**

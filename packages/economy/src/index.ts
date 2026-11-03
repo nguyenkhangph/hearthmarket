@@ -20,3 +20,4 @@ export function createVillage(opts: VillageOptions = {}): Village {
 }
 export * from './redteam.ts';
 export * from './deals.ts';
+export * from './haggle.ts';

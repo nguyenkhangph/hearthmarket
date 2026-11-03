@@ -103,8 +103,8 @@ flowchart LR
     World[Open-Meteo<br/>5 regions] --> Engine
   end
   subgraph NEAR [NEAR testnet]
-    Contract[hearth.testnet<br/>market · orders · guilds · budgets]
-    NPCs[mike / jack / buba / chloe / theo / bruno<br/>.hearth.testnet]
+    Contract[hearthmarket.testnet<br/>market · orders · budgets · HGOLD · HGOODS · HBADGE]
+    NPCs[mike / jack / buba / chloe / theo / bruno<br/>.hearthmarket.testnet]
   end
   Client <-->|WebSocket| Server
   Signer -->|function-call keys| NPCs --> Contract

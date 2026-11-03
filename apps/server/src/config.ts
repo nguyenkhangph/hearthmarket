@@ -37,7 +37,7 @@ export const config = {
     network: env.NEAR_NETWORK || 'testnet',
     /** one or more endpoints, comma-separated; a rate-limited call moves on to the next */
     rpcUrl: env.NEAR_RPC_URL || 'https://test.rpc.fastnear.com,https://near-testnet.drpc.org,https://testnet-rpc.intea.rs',
-    contract: env.HEARTH_CONTRACT || 'hearth.testnet',
+    contract: env.HEARTH_CONTRACT || 'hearthmarket.testnet',
     npcKeys: Object.fromEntries(NPCS.map((id) => [id, env[`NPC_KEY_${id.toUpperCase()}`] ?? ''])) as Record<NpcId, string>,
     oracleAccount: env.ORACLE_ACCOUNT ?? '',
     oracleKey: env.ORACLE_KEY ?? '',

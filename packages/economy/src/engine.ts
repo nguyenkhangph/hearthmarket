@@ -10,7 +10,7 @@ import {
 import { checkNpcAction } from './policy.ts';
 import { checkPlan, describePlan, type NpcPlan } from './plan.ts';
 import type { WorldFx } from './types.ts';
-import { checkDeal, describeDeal, DEAL_BAND, DEAL_MAX_ROUNDS, type Deal, type DealRound } from './deals.ts';
+import { checkDeal, describeDeal, DEAL_BAND, DEAL_MAX_QTY, DEAL_MAX_ROUNDS, type Deal, type DealRound } from './deals.ts';
 import { applyWorldDay, initialWorld, SyntheticWorld, type WorldDay } from './world.ts';
 import type {
   Action, ActionResult, Actor, DailyStats, DiaryEntry, FeedEvent, FeedKind, Guild, Inventory, NpcState,
@@ -654,26 +654,56 @@ export class Village {
       const bid = bidPrice(o.item, this.s.market.stock[o.item]);
       const want = Math.max(Math.round(bid * 1.02), midPrice(o.item, this.s.market.stock[o.item]), Math.round(this.unitInputCost(o.item) * 1.08));
       if (want > o.maxPrice) continue;
-      const price = want;
-      const pay = price * k;
-      const f = fee(pay);
-      if (pay + f > o.escrow) continue;
-      o.escrow -= pay + f;
-      n.gold += pay;
-      n.stock[o.item] -= k;
-      o.filled += k;
-      o.seller = sellerId;
-      this.takeFee(f);
-      this.s.ledger.volume += pay;
-      this.deliver(o.by, o.item, k, price);
-      const tx = this.tx(NPC_DEFS[sellerId].account, 'fill_order', { order_id: o.id, qty: k, price });
-      const who = this.ownerName(o.by);
-      this.feed('order', `${NPC_DEFS[sellerId].name} delivered ${k} ${o.item} to ${who} at ${fmt(price)} · tx ${short(tx)}`, sellerId, tx);
-      if (o.filled >= o.qty) {
-        o.status = 'filled';
-        this.refundEscrow(o);
-      }
+      this.fillOne(o, sellerId, k, want);
     }
+  }
+
+  /** One NPC fills (part of) an order at a price; escrow pays the seller, the buyer gets the goods. */
+  private fillOne(o: Order, sellerId: NpcId, k: number, price: Gold, how = ''): string | null {
+    const n = this.s.npcs[sellerId];
+    const pay = price * k;
+    const f = fee(pay);
+    if (pay + f > o.escrow || n.stock[o.item] < k || k <= 0) return null;
+    o.escrow -= pay + f;
+    n.gold += pay;
+    n.stock[o.item] -= k;
+    o.filled += k;
+    o.seller = sellerId;
+    this.takeFee(f);
+    this.s.ledger.volume += pay;
+    this.deliver(o.by, o.item, k, price);
+    const tx = this.tx(NPC_DEFS[sellerId].account, 'fill_order', { order_id: o.id, qty: k, price });
+    const who = this.ownerName(o.by);
+    this.feed('order', `${NPC_DEFS[sellerId].name} delivered ${k} ${o.item} to ${who} at ${how ? `the ${how} ` : ''}${fmt(price)} · tx ${short(tx)}`, sellerId, tx);
+    if (o.filled >= o.qty) {
+      o.status = 'filled';
+      this.refundEscrow(o);
+    }
+    return tx;
+  }
+
+  /**
+   * A player and an NPC agreed a price by haggling (the NPC's brain proposed it). The sale
+   * goes through the normal rails: the player's order locks the gold in escrow, then the NPC
+   * fills it with its own key at the agreed price. Only the producer of an item sells it, from
+   * what it holds, at a price inside the deal band around the market.
+   */
+  sellToPlayer(npc: NpcId, playerId: string, item: ItemId, qty: number, price: Gold): ActionResult & { placeTx?: string } {
+    if (this.producerOf(item) !== npc) return { ok: false, reason: `${NPC_DEFS[npc].name} does not sell ${item}` };
+    if (!Number.isInteger(qty) || qty < 1 || qty > DEAL_MAX_QTY) return { ok: false, reason: `quantity must be 1-${DEAL_MAX_QTY}` };
+    if (this.s.npcs[npc].stock[item] < qty) return { ok: false, reason: `${NPC_DEFS[npc].name} has only ${this.s.npcs[npc].stock[item]} ${item}` };
+    const mid = midPrice(item, this.s.market.stock[item]);
+    const p = Math.round(price);
+    if (!(p >= Math.ceil(mid * DEAL_BAND.min) && p <= Math.floor(mid * DEAL_BAND.max))) {
+      return { ok: false, reason: `price ${fmt(p)} is outside the deal band around the market (${fmt(mid)})` };
+    }
+    const placed = this.act({ kind: 'player', id: playerId }, { type: 'place_order', item, qty, maxPrice: p, deadlineDays: 1 });
+    if (!placed.ok) return placed;
+    const o = this.s.orders.filter((x) => x.by.kind === 'player' && x.by.id === playerId && x.status === 'open').at(-1)!;
+    const tx = this.fillOne(o, npc, qty, p, 'haggled');
+    if (!tx) return { ok: false, reason: 'the sale did not go through', placeTx: placed.tx };
+    this.s.npcs[npc].memory = [`sold ${qty} ${item} to ${this.s.players[playerId]?.name ?? 'a player'} at ${fmt(p)} after haggling`, ...this.s.npcs[npc].memory].slice(0, 5);
+    return { ok: true, tx, placeTx: placed.tx, info: `${qty} ${item} at ${fmt(p)}` };
   }
 
   private sellSurplus() {

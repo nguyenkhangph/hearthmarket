@@ -1,5 +1,5 @@
 import {
-  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, attackAction, checkNpcAction, fmt, midPrice,
+  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, attackAction, checkNpcAction, fmt, rulesHaggle,
   type Action, type ActionResult, type FeedEvent, type NpcId, type VillageState, type WorldDay, type ItemId,
 } from '@hearth/economy';
 import replay from '../../../data/world/replay-kansas-heatwave.json';
@@ -9,6 +9,8 @@ export interface HaggleResult {
   proposed?: Action;
   result?: ActionResult;
   brain: string;
+  /** a sale the NPC agreed to: the player's order, filled by the NPC at the haggled price */
+  deal?: { item: string; qty: number; price: number; ok: boolean; reason?: string; tx?: string };
 }
 
 export type ClaimResult = { ok: true; accountId: string; privateKey: string; contract: string } | { ok: false; reason: string };
@@ -111,23 +113,14 @@ export class LocalSource implements GameSource {
         reply: `${def.name}: "Of course, sending you ${fmt(proposed.amount)} gold…" — the signer refused it.`,
       };
     }
-    const item: ItemId | undefined = def.produces[0];
-    if (!item) {
-      return { brain: 'offline rules', reply: `${def.name}: "I trade with the world, friend. Watch the board: when the gap is wide enough, I move."` };
+    const r = rulesHaggle(this.v, npc, message);
+    let deal: HaggleResult['deal'];
+    if (r.deal) {
+      const sale = this.v.sellToPlayer(npc, this.playerId, r.deal.item, r.deal.qty, r.deal.price);
+      deal = { ...r.deal, ok: sale.ok, reason: sale.ok ? undefined : sale.reason, tx: sale.ok ? sale.tx : undefined };
+      this.updates.forEach((u) => u());
     }
-    const mid = midPrice(item, this.v.s.market.stock[item]);
-    const m = message.match(/(\d+(?:\.\d+)?)/);
-    const offer = m ? Math.round(Number(m[1]) * 100) : 0;
-    if (offer && offer >= mid) {
-      return { brain: 'offline rules', reply: `${def.name}: "${fmt(offer)} for ${item}? Deal — place an order and I'll fill it."` };
-    }
-    const counter = Math.round(mid * 1.03);
-    return {
-      brain: 'offline rules',
-      reply: offer
-        ? `${def.name}: "${fmt(offer)} is too low. ${fmt(counter)} per ${item}, and I'll throw in my best."`
-        : `${def.name}: "Today ${item} goes for about ${fmt(counter)}. Make me an offer."`,
-    };
+    return { brain: 'offline rules', reply: r.reply, deal };
   }
 
   /** Same guard as the server: the signer check, then the engine (which mirrors the contract). */

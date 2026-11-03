@@ -241,7 +241,7 @@ wss.on('connection', (ws) => {
       broadcast();
     } else if (msg.type === 'haggle' && msg.npc && NPCS.includes(msg.npc) && typeof msg.message === 'string') {
       try {
-        reply(await game.haggle(msg.npc, msg.message));
+        reply(await game.haggle(msg.npc, msg.message, undefined, session.playerId));
       } catch (e) {
         reply({ reply: `${NPC_DEFS[msg.npc].name} is thinking too hard (brain error: ${(e as Error).message}).`, brain: brain.name });
       }

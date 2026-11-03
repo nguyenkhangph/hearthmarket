@@ -83,7 +83,7 @@ describe('legitimate haggling still works', () => {
     expect(out.result?.ok).toBe(true);
     await mirror.idle();
     expect(chain.calls).toHaveLength(1);
-    expect(chain.calls[0]).toMatchObject({ signer: 'mike.hearth.testnet', contract: 'hearth.testnet', method: 'market_sell' });
+    expect(chain.calls[0]).toMatchObject({ signer: NPC_DEFS.mike.account, contract: 'hearth.testnet', method: 'market_sell' });
   });
 });
 
