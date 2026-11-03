@@ -653,7 +653,7 @@ function summarizeArgs(a: Record<string, unknown>): string {
   const parts: string[] = [];
   if (a.qty !== undefined && a.item) parts.push(`${a.qty} ${a.item}`);
   if (a.seller) parts.push(`from ${String(a.seller).split('.')[0]}`);
-  if (a.to) parts.push(`to ${a.to}`);
+  if (a.to) { const to = String(a.to); parts.push(`to ${to.length > 24 ? `${to.slice(0, 8)}…${to.slice(-6)}` : to}`); }
   if (typeof a.price === 'number') parts.push(`@ ${fmt(a.price)}`);
   if (typeof a.amount === 'number') parts.push(`${fmt(a.amount)} gold`);
   if (a.side) parts.push(String(a.side));
