@@ -18,7 +18,7 @@ import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
 import { fetchIntentsReading, type IntentsReading } from './world/intents.ts';
-import { dashboardView, type RedTeamStats } from './dashboard.ts';
+import { dashboardView, firstName, type RedTeamStats } from './dashboard.ts';
 import { authenticate, claimKey, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
 
 setContractAccount(config.near.contract);
@@ -105,7 +105,8 @@ if (config.chain === 'near') {
   if (operator) keys[operator] = config.near.oracleKey;
   else log('no ORACLE_KEY: no day sync, world posts or player relays. Run `npm run setup:testnet`.');
   const rpcUrls = parseRpcUrls(config.near.rpcUrl);
-  chain = withBalances(new NearChain(rpcUrls, keys));
+  const near = withBalances(new NearChain(rpcUrls, keys));
+  chain = near;
   log(`rpc: ${rpcUrls.join(' , ')}`);
   mirror = new ChainMirror(chain, {
     contract: config.near.contract,
@@ -119,6 +120,11 @@ if (config.chain === 'near') {
   });
   log(`gas budget: ${config.near.npcTxPerHour || 'unlimited'} calls per NPC per hour, produce ${config.near.batchProduce ? 'batched per day' : 'per tick'}, day sync every ${config.near.daySeconds}s, ${config.near.idleSeconds ? `pause ${config.near.idleSeconds}s after the last player leaves` : 'never pauses'}`);
   const m = mirror;
+  // version 4 adds relay_deliver_request; older contracts keep NPC requests off chain
+  void near.view<string>(config.near.contract, 'get_version').then((ver) => {
+    m.contractVersion = Number(ver) || 0;
+    log(`contract ${config.near.contract} version ${ver}${m.contractVersion < 4 ? ' (NPC requests stay off chain until version 4 is deployed)' : ''}`);
+  }).catch((e) => log(`get_version failed: ${(e as Error).message}`));
   const checkBalances = () => void m.checkBalances(config.near.lowBalanceNear).catch(() => {});
   setTimeout(checkBalances, 5_000);
   setInterval(checkBalances, 10 * 60_000).unref();
@@ -200,7 +206,7 @@ const http = createServer((req, res) => {
     lastViewerAt = Date.now();
     onPresence(watchers());
     res.setHeader('cache-control', 'no-store');
-    res.end(JSON.stringify(dashboardView(v, { online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt })));
+    res.end(JSON.stringify(dashboardView(v, { online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt, playerAccount: (id) => accounts.get(id) ?? null })));
   } else if (req.url === '/api/state') {
     res.end(JSON.stringify(v.snapshot()));
   } else {
@@ -261,7 +267,7 @@ wss.on('connection', (ws) => {
       proofs.splice(0, proofs.length, ...proofs.filter((t) => now - t < 3_600_000));
       const proveOnChain = chain.kind === 'near' && proofs.length < config.near.redTeamProofsPerHour;
       try {
-        const out = await game.redTeam(msg.attack!, session.account, { proveOnChain });
+        const out = await game.redTeam(msg.attack!, session.account, { proveOnChain, playerId: session.playerId });
         if (out.proof) proofs.push(now);
         redTeam.runs++;
         if (out.blocked) redTeam.blocked++;
@@ -269,6 +275,10 @@ wss.on('connection', (ws) => {
         if (out.layer === 'contract') redTeam.byContract++;
         if (out.proof?.hash) redTeam.onChain++;
         redTeam.last = { attack: out.attack, npc: out.npc, layer: out.layer, hash: out.proof?.hash, at: now };
+        const who = (redTeam.players ??= {})[session.playerId] ??= { name: firstName(session.name), runs: 0, blocked: 0, onChain: 0 };
+        who.runs++;
+        if (out.blocked) who.blocked++;
+        if (out.proof?.hash) who.onChain++;
         reply(out);
       } catch (e) {
         reply({ error: (e as Error).message });

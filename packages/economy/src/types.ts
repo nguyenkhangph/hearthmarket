@@ -203,7 +203,26 @@ export interface VillageState {
   dailyStats: DailyStats[];
   /** today's (and recent) deals negotiated between NPC agents, newest last */
   deals?: Deal[];
+  /** today's requests from NPCs to players ("bring 5 wheat before the storm") */
+  requests?: NpcRequest[];
   lastSeasonResult?: { season: number; ranking: { guild: string; score: number; reward: Gold }[] };
+}
+
+/** An NPC asks players for goods it needs today; the first player to bring them is paid. */
+export interface NpcRequest {
+  id: number;
+  npc: NpcId;
+  item: ItemId;
+  qty: number;
+  /** what the NPC pays per unit, from its own gold */
+  price: Gold;
+  /** small reward from the quest faucet on top */
+  bonus: Gold;
+  day: number;
+  text: string;
+  /** player who delivered it */
+  by?: string;
+  tx?: string;
 }
 
 export interface DailyStats {
@@ -234,6 +253,7 @@ export type Action =
   | { type: 'set_stall_prices'; slot: number; item: ItemId; buy: Gold; sell: Gold; fund?: Gold }
   | { type: 'propose_vote'; text: string; action: Action }
   | { type: 'cast_vote'; voteId: number; yes: boolean }
+  | { type: 'deliver_request'; requestId: number }
   // NPC-only
   | { type: 'hire'; seller: NpcId; item: ItemId; qty: number; price: Gold; sweetener?: { item: ItemId; qty: number } }
   | { type: 'fill_order'; orderId: number; price: Gold }

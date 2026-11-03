@@ -141,6 +141,10 @@ export const RULES = {
   // players
   playerStartGold: g(50),
   questReward: g(5),
+  // daily NPC requests: the NPC pays a premium over the market mid, the faucet adds a small bonus
+  requestsPerDay: 2,
+  requestPremiumBps: 12000,
+  requestBonus: g(3),
 
   // stalls
   stallSlots: 4,

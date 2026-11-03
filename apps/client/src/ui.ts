@@ -1,5 +1,5 @@
 import {
-  fmt, g, NEAR_CONFIG, RED_TEAM_ATTACKS, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind,
+  fmt, g, playerSigner, NEAR_CONFIG, RED_TEAM_ATTACKS, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind,
   type Action, type ItemId, type NpcId, type Village, type FeedEvent, type MarketRow,
 } from '@hearth/economy';
 import { icon } from './assets.ts';
@@ -41,6 +41,10 @@ export class Ui {
       if ((e.target as HTMLElement).closest('[data-open="account"]')) this.open('account');
     });
     $('#panel').addEventListener('click', (e) => this.onPanelClick(e));
+    $('#quests').addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>('[data-req]');
+      if (b) void this.act({ type: 'deliver_request', requestId: Number(b.dataset.req) });
+    });
     $('#panel').addEventListener('input', (e) => this.onPanelInput(e));
     $('#panel').addEventListener('submit', (e) => e.preventDefault());
     src.onUpdate(() => this.render());
@@ -153,11 +157,31 @@ export class Ui {
     if (!me) return;
     const done = QUESTS.filter((q) => me.quests[q.id]).length;
     const el = $('#quests');
-    el.classList.toggle('hidden', done === QUESTS.length && !me.badges?.length && this.v.s.tick % 24 > 0 && this.lastDay > 0);
-    el.innerHTML = `<h4>First steps · ${done}/${QUESTS.length}</h4>` +
-      QUESTS.map((q) => `<div class="q ${me.quests[q.id] ? 'done' : ''}">${me.quests[q.id] ? '✓' : '○'} ${esc(q.text)}</div>`).join('') +
-      `<div class="muted small">+${fmt(RULES.questReward, 0)} gold each</div>` +
-      (me.badges?.length ? `<div class="badges">${me.badges.map((b) => `<span class="badge" title="Soulbound badge${b.tx ? ' · NEP-171 on NEAR testnet' : ''}">★ ${esc(b.title)}${b.tx && txKind(b.tx) === 'chain' ? ` · ${this.txLink(b.tx)}` : ''}</span>`).join('')}</div>` : '');
+    const today = (this.v.s.requests ?? []).filter((r) => r.day === this.v.day);
+    const starter = done < QUESTS.length
+      ? `<h4>First steps · ${done}/${QUESTS.length}</h4>` +
+        QUESTS.map((q) => `<div class="q ${me.quests[q.id] ? 'done' : ''}">${me.quests[q.id] ? '✓' : '○'} ${esc(q.text)}</div>`).join('') +
+        `<div class="muted small">+${fmt(RULES.questReward, 0)} gold each</div>`
+      : '';
+    const reqs = today.length
+      ? `<h4>Today's requests</h4>` + today.map((r) => {
+        const f = this.face(r.npc);
+        const who = r.by ? (r.by === me.id ? 'you' : this.v.s.players[r.by]?.name ?? 'someone') : '';
+        const have = me.stock[r.item];
+        return `<div class="req ${r.by ? 'done' : ''}">${f ? `<img class="face" src="${f}" alt="">` : ''}<div>` +
+          `<b>${esc(NPC_DEFS[r.npc].name)}:</b> ${esc(r.text)}` +
+          `<div class="muted small">${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus · badge “Friend of ${esc(NPC_DEFS[r.npc].name)}”</div>` +
+          (r.by
+            ? `<div class="small">✓ delivered by ${esc(who)}${r.tx ? ` · ${this.txLink(r.tx)}` : ''}</div>`
+            : `<button class="mini" data-req="${r.id}" ${have < r.qty ? 'disabled' : ''} title="${have < r.qty ? `You have ${have} ${r.item}: buy more in the Market` : 'Hand the goods over'}">Deliver ${r.qty} ${icon(r.item, 12)} (${have}/${r.qty})</button>`) +
+          `</div></div>`;
+      }).join('')
+      : '';
+    const badges = me.badges?.length
+      ? `<div class="badges">${me.badges.map((b) => `<span class="badge" title="Soulbound badge${b.tx ? ' · NEP-171 on NEAR testnet' : ''}">★ ${esc(b.title)}${b.tx && txKind(b.tx) === 'chain' ? ` · ${this.txLink(b.tx)}` : ''}</span>`).join('')}</div>`
+      : '';
+    el.classList.toggle('hidden', !starter && !reqs && !badges);
+    el.innerHTML = starter + reqs + badges;
   }
 
   private onFeed(e: FeedEvent) {
@@ -244,8 +268,30 @@ export class Ui {
     <p class="muted small">Gold is locked in the contract until delivery. Refunded if the deadline passes.</p>
     <div class="row"><button class="primary" data-act="order">Order ${f.qty} × ${esc(ITEM_DEFS[f.item].name.toLowerCase())}</button></div>
     ${myOrders.length ? `<h4>Your orders</h4>${myOrders.map((o) => `<div class="kvrow small"><span>#${o.id} ${o.qty}× ${o.item} · max ${fmt(o.maxPrice)}</span><span>${o.status === 'open' ? `${o.filled}/${o.qty} · due day ${o.deadlineDay} <button data-act="cancel" data-id="${o.id}">Cancel</button>` : o.status}</span></div>`).join('')}` : ''}
+    ${this.myTxs()}
   </section>
 </div>`;
+  }
+
+  /** Every transaction that touched the player: their own (relayed) calls and NPC fills of their orders. */
+  private myTxs() {
+    const me = this.me;
+    if (!me) return '';
+    const signer = playerSigner(me.id);
+    const mine = new Set(this.v.s.orders.filter((o) => o.by.kind === 'player' && o.by.id === me.id).map((o) => o.id));
+    const rows = this.v.s.txs
+      .filter((t) => t.signer === signer || (t.method === 'fill_order' && mine.has(Number(t.args.order_id))))
+      .slice(-8)
+      .reverse();
+    if (!rows.length) return '';
+    const what = (t: (typeof rows)[number]) => {
+      const a = t.args as Record<string, unknown>;
+      const by = t.signer === signer ? '' : ` by ${esc(t.signer.split('.')[0])}`;
+      return `${esc(t.method.replace(/_/g, ' '))}${a.qty ? ` ${a.qty}` : ''}${a.item ? ` ${esc(String(a.item))}` : ''}${by}`;
+    };
+    const onChain = this.src.chain === 'near';
+    return `<h4>Your transactions</h4>${rows.map((t) => `<div class="kvrow small"><span>${hh(t.t)} · ${what(t)}</span><span>${t.ok ? '' : '<span class="down">refused</span> '}${this.txLink(t.hash)}</span></div>`).join('')}
+      <p class="muted small">${onChain ? 'Links open NEAR testnet. A hash marked "pending" is still on its way; "local" calls stay in the game (stalls, guild funds).' : 'Guest mode: simulated hashes. Sign in with Google to put your trades on NEAR testnet.'}</p>`;
   }
 
   private guildPanel() {
@@ -569,6 +615,10 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
                   ? { who: 'sys', text: `The contract accepted it on chain (${r.proof.reason}).` }
                   : { who: 'ok', text: '', html: `Sent to NEAR testnet anyway with ${esc(NPC_DEFS[r.npc].name)}'s key: <b>refused by the contract</b> (${esc(r.proof.reason)})${link ? ` · tx ${link}` : ''}` },
               );
+            }
+            if (r.badge) {
+              this.haggleLog.push({ who: 'ok', text: '★ You earned the soulbound badge "Red Teamer"' + (this.src.mode === 'guest' ? '' : ' (minted on NEAR testnet)') });
+              this.toast('★ Badge earned: Red Teamer');
             }
           }
         } finally {

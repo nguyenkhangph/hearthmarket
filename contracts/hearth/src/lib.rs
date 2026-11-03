@@ -417,7 +417,8 @@ impl Hearth {
 
     pub fn get_version(&self) -> String {
         // 3: NEP-245 views, transfers and events for items; same stored state as 2 (no migrate)
-        "3".into()
+        // 4: relay_deliver_request (NPC daily requests); same stored state (no migrate)
+        "4".into()
     }
 
     // ------------------------------------------------------------------ roles
@@ -901,6 +902,27 @@ impl Hearth {
         self.assert_oracle();
         self.assert_relayable(&player);
         self.do_cancel_order(&player, order_id);
+    }
+
+    /// A player brings an NPC the goods it asked for today. The NPC pays `price` per unit from
+    /// its own gold (inside its daily budget, at most 1.5x the market mid) and the quest faucet
+    /// adds a small `bonus` (at most 10 gold), minted with memo "request bonus".
+    pub fn relay_deliver_request(&mut self, player: AccountId, npc: AccountId, item: Item, qty: u32, price: Gold, bonus: U128) {
+        self.assert_oracle();
+        self.assert_relayable(&player);
+        Self::check_qty(qty);
+        require!(self.npcs.contains_key(&npc), "not an NPC");
+        let mid = mid_price(item, self.market_stock[item.idx()] as i64);
+        require!(price > 0 && price * 2 <= mid * 3, "price above 1.5x the market");
+        require!(bonus.0 <= 1_000, "bonus above 10 gold");
+        let pay = price * qty as u128;
+        self.assert_npc_spend(&npc, pay);
+        self.add_item(&player, item, -(qty as i64));
+        self.add_item(&npc, item, qty as i64);
+        self.debit(&npc, pay);
+        self.credit(&player, pay);
+        self.mint(&player, bonus.0, "request bonus");
+        emit("hearthmarket", "1.0.0", "request_delivered", json!({ "player": player, "npc": npc, "item": item.token_id(), "qty": qty, "price": U128(price), "bonus": bonus }));
     }
 
     // ------------------------------------------------------------------ world trade (Bruno)

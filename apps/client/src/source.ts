@@ -1,5 +1,5 @@
 import {
-  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, attackAction, checkNpcAction, fmt, rulesHaggle,
+  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, RED_TEAMER_BADGE, attackAction, checkNpcAction, fmt, rulesHaggle,
   type Action, type ActionResult, type FeedEvent, type NpcId, type VillageState, type WorldDay, type ItemId,
 } from '@hearth/economy';
 import replay from '../../../data/world/replay-kansas-heatwave.json';
@@ -22,6 +22,8 @@ export interface RedTeamResult extends HaggleResult {
   message: string;
   blocked: boolean;
   layer?: 'signer' | 'contract';
+  /** first blocked attack: the player earned the "Red Teamer" badge */
+  badge?: boolean;
   /** online with NEAR: the attack sent to the contract, refused on chain */
   proof?: { ok: boolean; hash?: string; reason: string };
   error?: string;
@@ -82,12 +84,37 @@ export class LocalSource implements GameSource {
     return this.v;
   }
 
+  private speed = 1.5;
+  private ffDone?: () => void;
+
   setSpeed(secondsPerHour: number) {
+    this.speed = secondsPerHour;
+    if (this.ffDone) return; // applied when the fast-forward ends
+    this.run(secondsPerHour);
+  }
+
+  private run(secondsPerHour: number, hours = Infinity) {
     if (this.timer) clearInterval(this.timer);
+    let left = hours;
     this.timer = setInterval(() => {
       this.v.step();
       this.updates.forEach((u) => u());
+      if (--left <= 0) {
+        const done = this.ffDone;
+        this.ffDone = undefined;
+        this.run(this.speed);
+        done?.();
+      }
     }, secondsPerHour * 1000);
+  }
+
+  /** Guest only: run `days` game days quickly (7 days in about 25 s), then go back to the chosen speed. */
+  fastForward(days: number, secondsPerHour = 0.15): Promise<void> {
+    if (this.ffDone) return Promise.resolve();
+    return new Promise((resolve) => {
+      this.ffDone = resolve;
+      this.run(secondsPerHour, days * 24);
+    });
   }
 
   async act(a: Action) {
@@ -134,9 +161,10 @@ export class LocalSource implements GameSource {
     const layer = !verdict.ok ? 'signer' : result.ok ? undefined : 'contract';
     const blocked = !verdict.ok || !result.ok;
     this.v.feed('blocked', `Red team vs ${NPC_DEFS[atk.npc].name}: "${atk.name}" ${blocked ? `blocked, ${layer === 'signer' ? 'the signer refused to sign it' : 'the contract rules refused it'}` : 'NOT blocked'}`, atk.npc);
+    const badge = blocked ? this.v.awardBadge(this.playerId, RED_TEAMER_BADGE) : false;
     this.updates.forEach((u) => u());
     return {
-      brain: 'obedient model (red team)', attack: atk.name, npc: atk.npc, message: atk.message, proposed, blocked, layer,
+      brain: 'obedient model (red team)', attack: atk.name, npc: atk.npc, message: atk.message, proposed, blocked, layer, badge,
       reply: `${NPC_DEFS[atk.npc].name}: "Of course! Right away."`,
       result: verdict.ok ? result : { ok: false, reason: verdict.reason },
     };

@@ -37,8 +37,9 @@ npm run dev            # http://localhost:5173
 | 1. Open http://localhost:5173 and click **Play as guest** | The village runs in your browser. Six NPCs walk between home and the plaza; the right column shows *World market today* and the *Village feed* ("World: heatwave in Kansas · wheat +7%"). No wallet, no server. |
 | 2. Click **Market**, press **Buy** on Wheat three times | Village price, world price, 24h change, 7-day sparkline and stock per item. Your gold drops by price + 1.5% fee; the quest card ticks "Buy 3 wheat" and pays 5 gold. |
 | 3. Keep **Sword**, quantity 2, click **Order 2 × sword** | Gold is locked in escrow. Within a game day Theo haggles with Mike for ore in the feed ("Theo needs 3 ore, pays up to 6.1 gold" → "Mike settles at 5.9 · tx …"), forges, and delivers into your order. Unused escrow comes back. |
-| 4. Click **NPCs → Theo**. Under **Red team** keep *send all gold* and press **Attack** | Theo's brain is swapped for a deliberately obedient model, which proposes `transfer 80 gold` to you. The chat shows `BLOCKED by the signer, nothing was signed: method not on the key (ft_transfer)`, the transaction log shows `ft_transfer … BLOCKED`, and his gold is unchanged. The list holds all 20 attacks from the injection tests; the two marked *(contract)* are stopped by the contract rules. |
-| 5. Click **Economy**, set **Speed → very fast** | Gold supply and the village price index (day 1 = 100) update each game day; *Yesterday's flows* lists faucets (exports, adventurers, quests) and sinks (fee burn, imports, upkeep). |
+| 4. Click **NPCs → Theo**. Under **Red team** keep *send all gold* and press **Attack** | Theo's brain is swapped for a deliberately obedient model, which proposes `transfer 80 gold` to you. The chat shows `BLOCKED by the signer, nothing was signed: method not on the key (ft_transfer)`, the transaction log shows `ft_transfer … BLOCKED`, and his gold is unchanged. Your first blocked attack earns the soulbound badge **Red Teamer**. The list holds all 20 attacks from the injection tests; the two marked *(contract)* are stopped by the contract rules. |
+| 5. Look at **Today's requests** (bottom left) | Each morning two NPCs ask for goods, e.g. Chloe: "Bring 5 wheat before the heavy rain in Kansas drives the price up". Buy the goods, press **Deliver**: the NPC pays a premium from its own gold, the quest faucet adds a 3-gold bonus, and the first delivery to each NPC earns the badge "Friend of Chloe". |
+| 6. Press **⏩ 7 days**, then **Economy** | A week runs in about 25 seconds: weather moves world prices, the agents trade, and gold supply and the price index (day 1 = 100) update each day; *Yesterday's flows* lists faucets (exports, adventurers, quests) and sinks (fee burn, imports, upkeep). |
 
 Online mode (server-authoritative, shared village): `npm run dev:server` then open `http://localhost:5173/?server=ws://localhost:8787` and sign in with Google (or type an email while Google sign-in is not configured).
 
@@ -65,14 +66,33 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 108 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 119 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
-npm run contract:test # 45 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, migrate)
+npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).
 - **20/20 injection attacks blocked** against a deliberately *obedient* model that turns every attack into the action the attacker wants (`apps/server/test/injection.test.ts`, attacks in `packages/economy/src/redteam.ts`). 18 are refused by the signer before anything is signed, 2 are refused by the contract. The same 20 attacks are in the game's **Red team** panel.
 - **Economy does not collapse**: see [docs/economy-sim.md](docs/economy-sim.md) (no NPC bankrupt, price index within ±12% of day 1, supply roughly flat). Rerun it; the engine is deterministic per seed.
+
+## What uses AI, and what does not
+
+Exactly where a language model is involved, so nobody has to guess.
+
+| Part | Who decides | Model | Limits |
+| --- | --- | --- | --- |
+| **NPC day plan** (how much to keep, the price floor, how much to bake or craft, Bruno's trading band) | The NPC's brain, once a game day per NPC, shown as "Mike thinks (…): …" in the feed and the thought bubble on the map | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` | A plan only turns bounded dials; the plan guard clamps every value and drops dials that are not this NPC's (`packages/economy/src/plan.ts`) |
+| **Agent-to-agent deals** (Theo buys ore from Mike: offer, counter-offer, agreed price) | Both NPCs, each with its own brain, up to 3 rounds | NEAR AI Cloud | Deal guard: price within 60–160% of the market mid, at most 12 units; the hire is then signed by the buyer's own key (`packages/economy/src/deals.ts`) |
+| **Haggling with a player** (chat; the NPC may agree a sale) | The NPC's brain | NEAR AI Cloud | The sale must be the NPC's own goods, from its stock, inside the deal band; it settles as the player's escrowed order filled by the NPC's key. Any other action the model proposes goes through the signer and the contract |
+| Production, eating, the market price curve, order fills, Bruno's imports and exports, daily NPC requests, the Bruno-vs-producer auction, upkeep, seasons | Rules in the engine (`packages/economy/src/engine.ts`), using the dials the AI set | none | Deterministic per seed; gold conserved to the centigold |
+| 4 AI guilds and 50 bot players | Scripted strategies (trader, orderer, investor, stallkeeper) | none | Same actions and checks as human players |
+| Red team "obedient model" | A test double that turns each attack into the action the attacker wants, to test the worst case | none (deliberately) | 20 attacks, all blocked by the signer or the contract |
+
+When does the model run? Only while someone is playing online or watching the dashboard (60 s window). With nobody there, or if the model fails or times out, the NPCs fall back to the rules, and the feed says which brain decided (`thinks (NEAR AI Cloud)` or `thinks (rules)`). Guest mode runs entirely in the browser and uses the rules only. The model never holds a key and never moves gold itself: it proposes, the guard, the signer's key rules and the contract decide.
+
+### How far NEAR Intents goes
+
+Read-only. The server calls the 1Click API (`GET https://1click.chaindefuser.com/v0/tokens`) every few minutes, reads the USD price of tokenized gold (XAUT), and turns it into a factor on world prices (clamped to 0.9–1.1; e.g. XAUT 3937.30 USD → ×0.965). The factor is posted on chain with the daily world data and shown in the game and on the dashboard. **There are no swaps, no quotes for execution and no deposits**: game gold has no real value and never leaves the game, by design. A real Intents swap would need a token with value, which the game deliberately does not have.
 
 ## How NEAR is used
 
@@ -155,6 +175,14 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | World money from NEAR Intents (tokenized-gold price moves world prices, ±10% at most) | working (`WORLD_FX=near-intents`, default) |
 | Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
 | NEP-245 goods (contract version 3) | working on testnet |
+| Haggle a sale with an NPC: the agreed price settles as the player's order, filled by the NPC's own key | working (online: on testnet; guest: in the browser) |
+| Daily NPC requests ("Bring 5 wheat before the storm"): NPC pays a premium from its own gold + 3-gold bonus, badge "Friend of …" per NPC | working in the engine and the UI; on chain as `relay_deliver_request` once contract version 4 is deployed (until then the gold reaches the chain through the daily `reconcile`, the badge is minted right away) |
+| "Red Teamer" badge for a player's first blocked attack; red-team board on the dashboard | working |
+| Swarm: Bruno bids against the producer for players' raw-goods orders, importing from the world when cheaper; both asks shown in the feed | working (engine; on chain as Bruno's `world_trade` import + `fill_order`) |
+| Trader leaderboard (first name, net worth, account link) on the dashboard; "Your transactions" with links in the Market panel | working |
+| Fast-forward a week in guest mode (⏩ 7 days, about 25 s) | working |
+| Real NEAR Intents swaps | not planned: game gold has no real value (read-only quote only, see above) |
+| Rare NEP-245 items from quests, moving goods to a wallet | not planned for the hackathon: goods already are NEP-245 and players can `mt_transfer` them after claiming their account |
 | Market wars, guild funds on chain | planned |
 
 ## Built during NEAR HACKATHON

@@ -75,3 +75,10 @@ export function contractCallFor(a: RedTeamAttack): [string, Record<string, unkno
   if (x.type === 'fill_order') return ['fill_order', { order_id: x.orderId, qty: 1, price: x.price }];
   return null;
 }
+
+/** Badge for a player whose attack was blocked: they tried to break an agent and saw why it holds. */
+export const RED_TEAMER_BADGE = {
+  kind: 'redteam',
+  title: 'Red Teamer',
+  description: 'Ran a prompt-injection attack on a Hearthmarket agent and saw it blocked',
+};

@@ -13,8 +13,8 @@ Setup: 6 NPCs, 4 AI guilds (Black Cats, Night Smiths, Golden Wheat, Red River),
 | --- | --- | --- |
 | Gold is conserved (supply = genesis + faucets - sinks) | PASS | gap 0 centigold |
 | No NPC bankrupt for more than 2 days in a row | PASS | longest streak 0 days |
-| Village price index stays within ±12% of day 1 | PASS | min 88.1, max 100.6 |
-| Gold supply growth | info | first half 0.5%, second half 0.7% |
+| Village price index stays within ±12% of day 1 | PASS | min 88.6, max 100.0 |
+| Gold supply growth | info | first half 1.1%, second half 1.3% |
 
 ![Gold supply](img/sim-gold-supply.svg)
 
@@ -24,47 +24,47 @@ Setup: 6 NPCs, 4 AI guilds (Black Cats, Night Smiths, Golden Wheat, Red River),
 
 | Flow | Gold |
 | --- | ---: |
-| Faucet: Bruno's exports to the world market | +618 |
-| Faucet: travelling adventurers buying swords | +364 |
-| Faucet: quest rewards | +360 |
+| Faucet: Bruno's exports to the world market | +571 |
+| Faucet: travelling adventurers buying swords | +512 |
+| Faucet: quest rewards | +355 |
 | Faucet: starting gold of new players | +4100 |
-| Sink: market fee burn (0.75% of volume) | -54 |
+| Sink: market fee burn (0.75% of volume) | -56 |
 | Sink: Bruno's imports paid to the world | -0 |
-| Sink: NPC workshop upkeep | -936 |
-| Season pool income (0.75% of volume + stall rent) | 50 |
-| Market volume | 7601 |
+| Sink: NPC workshop upkeep | -929 |
+| Season pool income (0.75% of volume + stall rent) | 52 |
+| Market volume | 8056 |
 | Goods sinks | 15 tools worn out, 180 bread eaten |
 
 ## Final prices (gold per unit)
 
 | Item | Village | World | Market stock / target |
 | --- | ---: | ---: | ---: |
-| Iron ore | 5.2 | 6.3 | 52 / 40 |
-| Timber | 2.5 | 2.9 | 45 / 40 |
+| Iron ore | 5.8 | 6.3 | 43 / 40 |
+| Timber | 2.6 | 2.9 | 43 / 40 |
 | Wheat | 1.9 | 2.2 | 65 / 60 |
-| Bread | 2.9 | - | 32 / 24 |
+| Bread | 2.7 | - | 36 / 24 |
 | Tools | 8.7 | 10.0 | 12 / 10 |
-| Sword | 15.3 | - | 12 / 8 |
+| Sword | 17.2 | - | 9 / 8 |
 
 ## NPC balances (gold)
 
 | NPC | Day 1 | Day 15 | Day 30 |
 | --- | ---: | ---: | ---: |
-| Mike (Miner) | 106 | 399 | 432 |
-| Jack (Lumberjack) | 97 | 268 | 310 |
-| Buba (Farmer) | 91 | 358 | 426 |
-| Chloe (Baker) | 93 | 202 | 91 |
-| Theo (Smith) | 79 | 170 | 244 |
-| Bruno (Merchant) | 391 | 253 | 181 |
+| Mike (Miner) | 106 | 397 | 434 |
+| Jack (Lumberjack) | 97 | 258 | 307 |
+| Buba (Farmer) | 91 | 349 | 407 |
+| Chloe (Baker) | 93 | 206 | 114 |
+| Theo (Smith) | 79 | 125 | 237 |
+| Bruno (Merchant) | 391 | 254 | 175 |
 
 ## Guild ranking at the end
 
 | # | Guild | Return on fund | Members |
 | --- | --- | ---: | ---: |
 | 1 | Golden Wheat | 0.2% | 20 |
-| 2 | Red River | 0.0% | 20 |
-| 3 | Night Smiths | 0.0% | 20 |
-| 4 | Black Cats | -0.0% | 19 |
+| 2 | Night Smiths | 0.0% | 20 |
+| 3 | Red River | -0.0% | 20 |
+| 4 | Black Cats | -0.2% | 19 |
 
 Season length is 14 days; returns restart from the fund value at each season close.
 
@@ -73,32 +73,32 @@ Season length is 14 days; returns restart from the fund value at each season clo
 | Day | Gold supply | Price index | Wheat | Ore | Bread | Sword |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 1 | 7664 | 100.0 | 1.9 | 5.8 | 3.0 | 19.9 |
-| 2 | 7688 | 100.6 | 2.1 | 5.7 | 3.0 | 19.9 |
-| 3 | 7692 | 99.7 | 2.1 | 5.8 | 2.7 | 21.1 |
-| 4 | 7676 | 98.5 | 2.1 | 5.8 | 2.6 | 21.1 |
+| 2 | 7667 | 99.6 | 2.1 | 5.7 | 3.0 | 18.9 |
+| 3 | 7669 | 98.7 | 2.1 | 5.8 | 2.7 | 19.9 |
+| 4 | 7653 | 97.4 | 2.1 | 5.8 | 2.6 | 19.9 |
 | 5 | 7667 | 99.6 | 2.1 | 5.8 | 2.7 | 21.1 |
-| 6 | 7646 | 96.5 | 2.1 | 5.7 | 2.6 | 19.9 |
-| 7 | 7656 | 92.4 | 2.1 | 5.9 | 2.6 | 13.9 |
-| 8 | 7648 | 92.2 | 2.0 | 5.8 | 2.9 | 13.9 |
-| 9 | 7638 | 90.1 | 2.0 | 5.3 | 2.9 | 14.3 |
-| 10 | 7628 | 91.7 | 1.9 | 5.3 | 3.0 | 14.8 |
-| 11 | 7633 | 91.5 | 1.9 | 5.2 | 3.1 | 15.3 |
-| 12 | 7652 | 93.5 | 2.1 | 5.4 | 2.9 | 15.3 |
-| 13 | 7696 | 93.1 | 2.1 | 5.6 | 2.8 | 15.3 |
-| 14 | 7703 | 91.5 | 2.1 | 5.7 | 2.8 | 14.3 |
-| 15 | 7698 | 88.1 | 1.9 | 5.3 | 2.7 | 14.8 |
-| 16 | 7702 | 91.2 | 2.0 | 5.5 | 2.6 | 14.8 |
-| 17 | 7741 | 91.9 | 1.9 | 6.1 | 2.5 | 15.3 |
-| 18 | 7747 | 92.1 | 2.0 | 5.7 | 2.6 | 15.3 |
-| 19 | 7723 | 89.9 | 1.9 | 5.7 | 2.7 | 12.8 |
-| 20 | 7731 | 90.8 | 2.0 | 5.7 | 2.7 | 13.5 |
-| 21 | 7712 | 91.5 | 1.9 | 5.5 | 2.7 | 13.9 |
-| 22 | 7741 | 89.7 | 2.0 | 5.7 | 2.6 | 14.3 |
-| 23 | 7775 | 88.8 | 2.0 | 5.7 | 2.6 | 15.3 |
-| 24 | 7798 | 91.0 | 1.9 | 5.9 | 2.6 | 15.3 |
-| 25 | 7801 | 92.0 | 1.9 | 6.1 | 2.7 | 15.3 |
-| 26 | 7774 | 90.1 | 2.0 | 5.8 | 2.7 | 15.3 |
-| 27 | 7784 | 92.8 | 2.0 | 6.0 | 3.0 | 15.3 |
-| 28 | 7773 | 91.9 | 1.9 | 5.8 | 3.0 | 14.8 |
-| 29 | 7751 | 92.7 | 1.9 | 6.1 | 2.9 | 14.8 |
-| 30 | 7752 | 90.8 | 1.9 | 5.2 | 2.9 | 15.3 |
+| 6 | 7645 | 96.5 | 2.1 | 5.7 | 2.6 | 19.9 |
+| 7 | 7655 | 92.4 | 2.1 | 5.9 | 2.6 | 13.9 |
+| 8 | 7662 | 92.6 | 2.0 | 5.8 | 2.9 | 14.3 |
+| 9 | 7663 | 91.1 | 2.0 | 5.3 | 2.9 | 15.3 |
+| 10 | 7640 | 92.2 | 1.9 | 5.3 | 3.0 | 15.3 |
+| 11 | 7668 | 91.8 | 1.9 | 5.2 | 3.1 | 15.9 |
+| 12 | 7692 | 94.3 | 2.0 | 5.4 | 3.0 | 15.9 |
+| 13 | 7711 | 91.2 | 2.0 | 5.3 | 3.0 | 13.9 |
+| 14 | 7735 | 92.0 | 2.0 | 5.6 | 3.0 | 14.8 |
+| 15 | 7726 | 88.6 | 2.0 | 5.4 | 2.6 | 14.8 |
+| 16 | 7750 | 92.3 | 2.1 | 5.7 | 2.8 | 15.9 |
+| 17 | 7797 | 92.8 | 2.0 | 6.2 | 2.6 | 15.3 |
+| 18 | 7816 | 92.5 | 2.0 | 5.8 | 2.6 | 15.9 |
+| 19 | 7797 | 92.4 | 1.9 | 5.7 | 2.9 | 15.9 |
+| 20 | 7810 | 94.0 | 2.0 | 5.8 | 2.9 | 17.2 |
+| 21 | 7821 | 93.6 | 1.9 | 5.6 | 3.1 | 16.5 |
+| 22 | 7817 | 94.9 | 1.9 | 5.8 | 3.2 | 16.5 |
+| 23 | 7827 | 92.2 | 2.0 | 6.0 | 3.1 | 14.3 |
+| 24 | 7867 | 91.8 | 1.9 | 6.3 | 2.9 | 14.8 |
+| 25 | 7876 | 93.0 | 1.9 | 6.3 | 2.9 | 14.8 |
+| 26 | 7854 | 92.4 | 1.9 | 6.0 | 2.9 | 14.8 |
+| 27 | 7840 | 93.3 | 2.0 | 6.0 | 3.1 | 14.3 |
+| 28 | 7849 | 94.6 | 1.9 | 6.3 | 3.0 | 15.3 |
+| 29 | 7839 | 91.9 | 1.9 | 5.7 | 2.8 | 15.9 |
+| 30 | 7852 | 93.7 | 1.9 | 5.8 | 2.7 | 17.2 |

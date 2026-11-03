@@ -84,6 +84,19 @@ async function boot(name: string, auth: HelloAuth | null) {
   game = startGame(document.getElementById('game')!, src, (id) => ui.open('npc', id));
   const speed = document.getElementById('speed') as HTMLSelectElement;
   speed.addEventListener('change', () => src.setSpeed(Number(speed.value)));
+  const ff = document.getElementById('ffwd') as HTMLButtonElement;
+  const local = src instanceof LocalSource ? src : null;
+  if (local) {
+    ff.addEventListener('click', async () => {
+      ff.disabled = true;
+      const from = local.village().day;
+      ff.textContent = '⏩ running…';
+      await local.fastForward(7);
+      ff.textContent = '⏩ 7 days';
+      ff.disabled = false;
+      ui.toast(`Fast-forwarded from day ${from} to day ${local.village().day}: see Economy for the week`);
+    });
+  }
   (window as unknown as { hearth: unknown }).hearth = { src, ui, game };
 }
 

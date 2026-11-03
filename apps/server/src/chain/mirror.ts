@@ -127,7 +127,7 @@ export class ChainMirror {
     const calls = this.translate(signer, method, args);
     if (!calls) return null;
     if (npc && method === 'produce' && this.opts.batchProduce) return this.collect(calls[0]);
-    if (npc && method !== 'fill_order' && !this.withinBudget(signer)) {
+    if (npc && method !== 'fill_order' && method !== 'world_import' && !this.withinBudget(signer)) {
       this.stats.budgeted++;
       return null;
     }
@@ -274,6 +274,8 @@ export class ChainMirror {
   }
 
   balances: Record<string, number> = {};
+  /** contract `get_version`, read at startup; 4+ settles NPC requests on chain */
+  contractVersion = 0;
 
   /** `Village.badgeHook`: mints a soulbound badge for a human player. */
   readonly badgeHook = (playerId: string, b: { kind: string; title: string; description: string }): string | null => {
@@ -309,6 +311,10 @@ export class ChainMirror {
           const oid = Number(args.order_id);
           const id = this.orders.get(oid) ?? (this.orderLanding.has(oid) ? this.chainOrderId(oid) : undefined);
           return id ? [call('fill_order', { order_id: id, qty, price: args.price })] : null;
+        }
+        case 'world_import': {
+          const item = String(args.item);
+          return ITEM_DEFS[item as keyof typeof ITEM_DEFS]?.world && qty > 0 ? [call('world_trade', { item, qty: Math.min(qty, 12), import: true })] : null;
         }
         case 'world_trade': {
           const item = String(args.item);
@@ -346,6 +352,11 @@ export class ChainMirror {
         if (id) relay = this.op('relay_cancel_order', { player, order_id: id });
         break;
       }
+      case 'deliver_request':
+        if (this.contractVersion >= 4) {
+          relay = this.op('relay_deliver_request', { player, npc: args.npc, item: args.item, qty, price: args.price, bonus: String(args.bonus) });
+        }
+        break;
     }
     if (!relay) return null;
     return this.registrationQueued.has(player) ? [relay] : [this.registration(player), relay];

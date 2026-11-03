@@ -515,7 +515,7 @@ fn migrate_keeps_version_1_balances_and_orders() {
     };
     env::state_write(&v1);
     let c = Hearth::migrate();
-    assert_eq!(c.get_version(), "3");
+    assert_eq!(c.get_version(), "4");
     assert_eq!(bal(&c, "mike.hearth.testnet"), 7_777);
     assert_eq!(c.get_npc(acc("mike.hearth.testnet")).unwrap().spent_today, 5_900);
     assert_eq!(c.get_open_orders().len(), 1);
@@ -591,4 +591,32 @@ fn cannot_move_goods_you_do_not_have() {
 fn unknown_goods_are_refused() {
     let c = setup();
     c.mt_balance_of(acc("khang.testnet"), "gold".into());
+}
+
+#[test]
+fn player_delivers_an_npc_request() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    c.relay_register_player(acc("p-9.hearth.testnet"), U128(5_000));
+    c.relay_market_buy(acc("p-9.hearth.testnet"), Item::Wheat, 3, 1_000);
+    let p0 = bal(&c, "p-9.hearth.testnet");
+    let t0 = bal(&c, "theo.hearth.testnet");
+    let supply = c.ft_total_supply().0;
+    let price = c.get_market().iter().find(|(i, _, _)| *i == Item::Wheat).unwrap().2 * 6 / 5;
+    c.relay_deliver_request(acc("p-9.hearth.testnet"), acc("theo.hearth.testnet"), Item::Wheat, 3, price, U128(300));
+    assert_eq!(c.item_balance(acc("theo.hearth.testnet"), Item::Wheat), 3);
+    assert_eq!(c.item_balance(acc("p-9.hearth.testnet"), Item::Wheat), 0);
+    assert_eq!(bal(&c, "p-9.hearth.testnet"), p0 + price * 3 + 300);
+    assert_eq!(bal(&c, "theo.hearth.testnet"), t0 - price * 3);
+    assert_eq!(c.ft_total_supply().0, supply + 300, "only the bonus is minted");
+}
+
+#[test]
+#[should_panic(expected = "price above 1.5x the market")]
+fn request_price_is_capped() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    c.relay_register_player(acc("p-9.hearth.testnet"), U128(5_000));
+    c.relay_market_buy(acc("p-9.hearth.testnet"), Item::Wheat, 1, 1_000);
+    c.relay_deliver_request(acc("p-9.hearth.testnet"), acc("theo.hearth.testnet"), Item::Wheat, 1, 100_000, U128(0));
 }

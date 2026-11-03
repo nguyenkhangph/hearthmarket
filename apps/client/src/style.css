@@ -108,6 +108,13 @@ b.blocked { color: var(--down); }
 #quests h4 { margin: 0 0 6px; font: 600 11.5px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
 #quests .q { font-size: 13px; }
 #quests .q.done { color: var(--up); text-decoration: line-through; opacity: 0.8; }
+#quests { max-height: 46vh; overflow-y: auto; width: 270px; }
+#quests h4 ~ h4 { margin-top: 10px; }
+#quests .req { display: grid; grid-template-columns: 26px 1fr; gap: 6px; font-size: 12.5px; padding: 5px 0; border-top: 1px dashed #5b433088; }
+#quests .req .face { width: 24px; height: 24px; image-rendering: pixelated; }
+#quests .req.done { opacity: 0.7; }
+#quests .req .mini { margin-top: 4px; font-size: 12px; padding: 2px 8px; }
+#quests .req .mini:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* panels */
 .panel { position: absolute; inset: 12px; z-index: 5; background: #1b1e2bf4; border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow: auto; box-shadow: 0 20px 60px #0009; }
