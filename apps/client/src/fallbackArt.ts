@@ -30,7 +30,8 @@ const IMAGE_SIZE: Record<string, [number, number, string]> = {
   stoneHouse: [80, 96, '#5772a8'],
   windmill: [64, 112, '#c9b38a'],
   silo: [48, 80, '#b0866a'],
-  cave: [48, 48, '#3b3b46'],
+  cliff: [224, 96, '#6d6f80'],
+  mineDoor: [48, 48, '#3b3b46'],
   well: [32, 48, '#8a8f9e'],
   bridge: [48, 64, '#8a6a46'],
   hay: [32, 32, '#d8b85a'],
@@ -131,7 +132,7 @@ export function makeFallbackTextures(scene: Phaser.Scene) {
       if (key === 'bridge') {
         fill(ctx, '#8a6a46', 0, 20, w, 24);
         for (let x = 2; x < w; x += 6) fill(ctx, '#6e5236', x, 20, 1, 24);
-      } else if (key === 'cave') {
+      } else if (key === 'mineDoor') {
         fill(ctx, '#55555f', 0, 8, w, h - 8);
         fill(ctx, '#1d1d24', 14, 22, 20, 26);
       } else if (key === 'well') {

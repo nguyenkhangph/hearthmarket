@@ -59,7 +59,10 @@ export class VillageScene extends Phaser.Scene {
   create() {
     if (!ART.ok) makeFallbackTextures(this);
     this.drawGround();
+    this.buildMineCliff();
     this.placeProps();
+    // fixed labels (stalls) follow the canvas when the window is resized
+    this.scale.on('resize', () => this.time.delayedCall(0, () => this.sync()));
     this.composeTheo();
     this.createNpcAnims();
     this.anims.create({ key: 'campfire', frames: this.anims.generateFrameNumbers('campfire', { start: 0, end: 7 }), frameRate: 8, repeat: -1 });
@@ -152,6 +155,32 @@ export class VillageScene extends Phaser.Scene {
     const crops = this.textures.get('crops');
     for (let i = 0; i < 7 * 44; i++) if (!crops.has(String(i))) crops.add(String(i), 0, (i % 7) * 16, Math.floor(i / 7) * 16, 16, 16);
     for (const w of wheatTiles()) this.add.image(w.x * TILE, w.y * TILE, 'crops', String(w.stage)).setOrigin(0).setDepth(w.y * TILE + 14);
+  }
+
+  /**
+   * The mine: a rock face 7 tiles wide, cut as a 9-slice from the cliff sheet (left, middle
+   * and right columns; rim, grass, face and foot rows), with the timbered entrance set in it.
+   */
+  private buildMineCliff() {
+    const W = 7;
+    const rows = [0, 16, 32, 48, 64, 80]; // source rows (16px) from top to bottom
+    if (this.textures.exists('mineCliff')) this.textures.remove('mineCliff');
+    const tex = this.textures.createCanvas('mineCliff', W * TILE, rows.length * TILE)!;
+    const ctx = tex.getContext();
+    ctx.imageSmoothingEnabled = false;
+    if (ART.ok) {
+      const src = this.textures.get('cliff').getSourceImage() as HTMLImageElement;
+      for (let c = 0; c < W; c++) {
+        const sx = c === 0 ? 16 : c === W - 1 ? 48 : 32;
+        rows.forEach((sy, r) => ctx.drawImage(src, sx, sy, TILE, TILE, c * TILE, r * TILE, TILE, TILE));
+      }
+    } else {
+      ctx.fillStyle = '#4f7a3a';
+      ctx.fillRect(2, 0, W * TILE - 4, 3 * TILE);
+      ctx.fillStyle = '#6d6f80';
+      ctx.fillRect(2, 3 * TILE, W * TILE - 4, 4 * TILE - 6);
+    }
+    tex.refresh();
   }
 
   private placeProps() {
@@ -342,7 +371,8 @@ export function startGame(parent: HTMLElement, src: GameSource, onNpcClick: (id:
     height: MAP_H * TILE,
     pixelArt: true,
     backgroundColor: '#120d0a',
-    scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
+    // fill the whole stage (no side bars); a sliver of the map edge is cropped instead
+    scale: { mode: Phaser.Scale.ENVELOP, autoCenter: Phaser.Scale.CENTER_BOTH },
     scene: new VillageScene(src, onNpcClick),
   });
 }
