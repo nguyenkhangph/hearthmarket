@@ -25,6 +25,8 @@ export interface NpcState {
   inflowToday: Gold; // investment money received today, excluded from profit
   brokeDays: number;
   memory: string[]; // short facts the brain keeps
+  /** working capital lent by the market treasury, repaid from later profits */
+  loan?: Gold;
   /** today's plan from the NPC brain (LLM), already checked by the plan guard */
   plan?: NpcPlan;
   x: number; // tile position for the client

@@ -898,6 +898,30 @@ export class Village {
     }
   }
 
+  /**
+   * An NPC with no gold and nothing to sell cannot buy inputs or bread, so it would stop for
+   * good. The market treasury lends it a little working capital (gold moves, none is created)
+   * and takes it back once the NPC has more than 100 gold.
+   */
+  private workingCapital(n: NpcState) {
+    const loan = n.loan ?? 0;
+    if (loan > 0 && n.gold > RULES.loanRepayAbove) {
+      const back = Math.min(loan, n.gold - RULES.loanRepayAbove);
+      n.gold -= back;
+      this.s.market.treasury += back;
+      n.loan = loan - back;
+      if (!n.loan) this.feed('trade', `${NPC_DEFS[n.id].name} repaid the market's loan`, n.id);
+      return;
+    }
+    const sellable = ITEMS.some((i) => n.stock[i] > 0 && i !== 'bread');
+    if (n.gold < g(5) && !sellable && loan < g(90) && this.s.market.treasury > g(300)) {
+      n.gold += RULES.loanAmount;
+      this.s.market.treasury -= RULES.loanAmount;
+      n.loan = loan + RULES.loanAmount;
+      this.feed('trade', `${NPC_DEFS[n.id].name} is broke; the market lends ${fmt(RULES.loanAmount, 0)} gold of working capital`, n.id);
+    }
+  }
+
   /** Travelling adventurers buy swords: outside gold entering the village. */
   private adventurers() {
     const n = this.rng.int(...RULES.adventurerDemand);
@@ -927,6 +951,7 @@ export class Village {
   private closeDay() {
     for (const id of NPCS) {
       const n = this.s.npcs[id];
+      this.workingCapital(n);
       const upkeep = Math.min(n.gold, RULES.upkeepFlat + bps(Math.max(0, n.gold - RULES.upkeepFreeBalance), RULES.upkeepBps));
       n.gold -= upkeep;
       this.s.ledger.sinks.upkeep += upkeep;

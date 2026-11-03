@@ -137,6 +137,9 @@ export const RULES = {
   // investing
   investShareBps: 2500, // NPC pays 25% of its daily profit to investors
   investDays: 7,
+  // a broke NPC borrows working capital from the market treasury and repays it above 100 gold
+  loanAmount: g(30),
+  loanRepayAbove: g(100),
   investKeepGold: g(40), // an NPC repays investors only down to this much working capital
 
   // players

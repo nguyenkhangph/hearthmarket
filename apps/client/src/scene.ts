@@ -323,7 +323,9 @@ export class VillageScene extends Phaser.Scene {
     const canvas = this.game.canvas;
     const r = canvas.getBoundingClientRect();
     const host = this.labels.getBoundingClientRect();
-    return { x: r.left - host.left + (x / (MAP_W * TILE)) * r.width, y: r.top - host.top + (y / (MAP_H * TILE)) * r.height };
+    // r is in screen pixels; label offsets are in the host's own (untransformed) pixels
+    const k = canvas.offsetWidth ? r.width / canvas.offsetWidth : 1;
+    return { x: (r.left - host.left + (x / (MAP_W * TILE)) * r.width) / k, y: (r.top - host.top + (y / (MAP_H * TILE)) * r.height) / k };
   }
 
   private placeEl(el: HTMLElement, x: number, y: number) {
