@@ -106,13 +106,23 @@ export class NpcBrain {
           `You are ${def.name}, the ${def.title.toLowerCase()} of Hearthmarket, a small trading village. Personality: ${def.personality}`,
           'Each morning you set a plan for the day. The village rules do the actual trading; you only set these dials:',
           PLAN_HELP[npc],
-          'Reply with JSON only: {"plan": {...}, "why": "<one short sentence, in character>"}',
+          'Reply with JSON only: {"plan": {...}, "why": "<one short sentence, in character, naming the number that made you decide>"}',
+          'The "why" is required and must not be empty.',
         ].join('\n'),
       },
       { role: 'user', content: `Day ${v.day}. Market (gold per unit):\n${rows}\nYou: ${saw}` },
     ];
     const raw = await this.llm.complete(messages);
-    return { ...parsePlan(raw), saw };
+    let out = parsePlan(raw);
+    if (!out.why.trim()) {
+      // one retry asking only for the missing reason
+      const again = await this.llm.complete([...messages, { role: 'assistant', content: raw }, { role: 'user', content: 'You left "why" empty. Reply with the same JSON and one short sentence in "why".' }]);
+      const p2 = parsePlan(again);
+      out = { proposal: Object.keys(p2.proposal).length ? p2.proposal : out.proposal, why: p2.why };
+    }
+    // still nothing: say so plainly instead of leaving the bubble empty
+    if (!out.why.trim()) out.why = `(the model gave no reason; the numbers it saw: ${saw.slice(0, 110)})`;
+    return { ...out, saw };
   }
 
   /** No-LLM mode: a counter-offer, and a deal when the player offers at least the market price. */

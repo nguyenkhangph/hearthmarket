@@ -22,6 +22,7 @@ $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$cargoBin*") { [Environment]::SetEnvironmentVariable("Path", "$userPath;$cargoBin", "User") }
 $env:Path += ";$cargoBin"
 
+rustup update stable   # near-sdk 5.x needs rustc 1.93 or newer (rustc --version)
 rustup target add wasm32-unknown-unknown
 
 # prebuilt installers (building from source needs NASM on Windows)

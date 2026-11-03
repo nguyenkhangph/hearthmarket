@@ -1,10 +1,10 @@
 # Hearthmarket
 
-A pixel-art village where every NPC is an AI agent with its own NEAR account. The agents run their own businesses: they negotiate prices with each other, hire each other and fill player orders, and every deal is a transaction signed by the agent's own key, inside limits the agent cannot break. Real weather in five producing regions moves world prices, and the price of real (tokenized) gold, read from NEAR Intents, sets what village gold is worth. Players sign in with Google, never see a wallet, and can claim their NEAR account whenever they like.
+A pixel-art village where six NPCs run their own businesses, each with its own NEAR account and key. While someone is playing or watching, their decisions come from a language model on NEAR AI Cloud; otherwise (and in guest mode) the same NPCs follow built-in rules (see *What uses AI, and what does not*). They they negotiate prices with each other, hire each other and fill player orders, and every deal is a transaction signed by the agent's own key, inside limits the agent cannot break. Real weather in five producing regions moves world prices, and the price of real (tokenized) gold, read from NEAR Intents, sets what village gold is worth. Players sign in with Google, never see a wallet, and can claim their NEAR account whenever they like.
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
-> Status, 3 Nov 2026: the contract (version 3: NEP-141 gold, NEP-171 badges, NEP-245 goods) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
+> Status, 3 Nov 2026: the contract (version 4: NEP-141 gold, NEP-171 badges, NEP-245 goods, NPC requests) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
 
 ## The problem
 
@@ -24,7 +24,7 @@ The same question matters outside games. AI agents are starting to buy and sell 
 
 ## Try it in 3 minutes
 
-You need Node 20+. The Cute Fantasy RPG art pack is licensed and not redistributable, so it is not in this repo (see Credits). Without it the game draws simple stand-in art and everything else works the same; with it, import it once.
+You need Node 22 or newer (the scripts use `--env-file-if-exists`), and for the contract Rust 1.93+ (see below). The Cute Fantasy RPG art pack is licensed and not redistributable, so it is not in this repo (see Credits). Without it the game draws simple stand-in art and everything else works the same; with it, import it once.
 
 ```sh
 npm install
@@ -49,7 +49,7 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 
 | What | Link |
 | --- | --- |
-| Contract (version 3: `get_version` returns `"3"`) | [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns) · [version 3 deploy](https://testnet.nearblocks.io/txns/HJ5Z9FWMsRQjY5UYDHCYQkAzamUH2pSTnCz9JEDBJsdH) |
+| Contract (version 4: `get_version` returns `"4"`) | [`hearthmarket.testnet`](https://testnet.nearblocks.io/address/hearthmarket.testnet?tab=txns) · version 4 deployed 3 Nov 2026 (code-only upgrade, state kept) · [earlier version 3 deploy](https://testnet.nearblocks.io/txns/HJ5Z9FWMsRQjY5UYDHCYQkAzamUH2pSTnCz9JEDBJsdH) |
 | NPC accounts, each with its own function-call key | [`mike`](https://testnet.nearblocks.io/address/mike.hearthmarket.testnet) · [`jack`](https://testnet.nearblocks.io/address/jack.hearthmarket.testnet) · [`buba`](https://testnet.nearblocks.io/address/buba.hearthmarket.testnet) · [`chloe`](https://testnet.nearblocks.io/address/chloe.hearthmarket.testnet) · [`theo`](https://testnet.nearblocks.io/address/theo.hearthmarket.testnet) · [`bruno`](https://testnet.nearblocks.io/address/bruno.hearthmarket.testnet) `.hearthmarket.testnet` |
 | Daily `reconcile` (operator re-anchors the chain to the engine's books) | [tx 2w9tZZee…](https://testnet.nearblocks.io/txns/2w9tZZeeYsiYHn7crcs51ho6froBdeNQnvDiAAFjYUSF) |
 | Daily `post_world_data` (world reading + SHA-256 of the source payload) | [tx BzDmSbpo…](https://testnet.nearblocks.io/txns/BzDmSbpoVyeFFZa3qzhAGPRxCjQeMBfPazYyt9oYzM9) |
@@ -58,17 +58,22 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
 | **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, red-team score) | [hearthmarket.vercel.app/dashboard](https://hearthmarket.vercel.app/dashboard), data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
 | Hosted agent brains | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` (day plans, agent-to-agent deals, haggling); rules while nobody is online |
-| Hosted world money | NEAR Intents 1Click: tokenized gold XAUT, e.g. 3937.30 USD → world prices ×0.965 (3 Nov 2026) |
+| Hosted world money | NEAR Intents 1Click: tokenized gold XAUT, e.g. 3929.34 USD → world prices ×0.967 (3 Nov 2026, 02:22 UTC; refreshed every few minutes) |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
 
 Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hire`, `market_buy`, `market_sell`, `world_trade`), signed with its own key. To run your own deployment: follow [docs/testnet.md](docs/testnet.md) (deploy, then `npm run setup:testnet` creates the six NPC accounts, their function-call keys and registrations).
 
+### Reading the chain
+
+- **Two day counters.** `get_game_day` is the game's own day, sent with every `reconcile`; it starts again at 1 whenever the game server restarts (the world is rebuilt from the seed). The contract's internal day (`get_economy`) only counts up: it turns with every `advance_day` and `reconcile` and is what NPC daily budgets and order deadlines use. After a few restarts the second number is much larger than the first; that is expected.
+- **Failed transactions, and which ones are on purpose.** Red-team calls (tagged `red team` on the dashboard) are meant to fail: the contract refusing them is the proof. Other failures are drift: the game is authoritative for eating, upkeep, stalls and guild trades, and the chain sees NPC calls only within a gas budget, so between two `reconcile` calls an NPC can hold fewer goods on chain than in the game, and a `craft` or `market_sell` is refused with `not enough goods`. Since 3 Nov the mirror holds back goods-spending calls of an NPC whose earlier call did not reach the chain until the next `reconcile` has landed (counted as `unsynced` in `/api/health`), so these refusals should become rare. `reconcile` logs every correction as an `ft_mint`/`ft_burn` with memo `reconcile`.
+
 ### Verify the claims
 
 ```sh
-npm test              # 120 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 121 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
-npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate)
+npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.93+ (near-sdk 5.x)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).
@@ -92,7 +97,7 @@ When does the model run? Only while someone is playing online or watching the da
 
 ### How far NEAR Intents goes
 
-Read-only. The server calls the 1Click API (`GET https://1click.chaindefuser.com/v0/tokens`) every few minutes, reads the USD price of tokenized gold (XAUT), and turns it into a factor on world prices (clamped to 0.9–1.1; e.g. XAUT 3937.30 USD → ×0.965). The factor is posted on chain with the daily world data and shown in the game and on the dashboard. **There are no swaps, no quotes for execution and no deposits**: game gold has no real value and never leaves the game, by design. A real Intents swap would need a token with value, which the game deliberately does not have.
+Read-only. The server calls the 1Click API (`GET https://1click.chaindefuser.com/v0/tokens`) every few minutes, reads the USD price of tokenized gold (XAUT), and turns it into a factor on world prices (clamped to 0.9–1.1; e.g. XAUT 3929.34 USD → ×0.967). The factor is posted on chain with the daily world data and shown in the game and on the dashboard. **There are no swaps, no quotes for execution and no deposits**: game gold has no real value and never leaves the game, by design. A real Intents swap would need a token with value, which the game deliberately does not have.
 
 ## How NEAR is used
 
@@ -102,7 +107,7 @@ Read-only. The server calls the 1Click API (`GET https://1click.chaindefuser.com
 | **Function-call access keys, least privilege**: each NPC key can call only the contract, and only its own methods (Mike: `produce` + trading; Theo: `craft` + trading; Bruno: `world_trade` + trading). The game server's operator key has a separate list and can never sign as an NPC | `NPC_KEY_METHODS` / `OPERATOR_METHODS` in `packages/economy/src/policy.ts`; enforced by NEAR for the key, checked again before signing (`apps/server/src/chain/mirror.ts`) |
 | **Contract-side spending guard**: daily gold budget per NPC, NPCs can never `ft_transfer`, recipes for crafting, price and quantity sanity | `contracts/hearth/src/lib.rs` (`assert_npc_spend`, `ft_transfer`, `craft`) |
 | **Every NPC action on chain, signed by the NPC**: production, crafting, NPC deals, market trades, order fills, Bruno's world trades. One queue per key | `apps/server/src/chain/mirror.ts`; live example: [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
-| **NEP-141 gold** (`HGOLD`, 2 decimals) with NEP-297 events; **NEP-171 soulbound badges** for quests and season ranks; **NEP-245 goods** (`ore`, `timber`, `wheat`, `bread`, `tools`, `sword` as multi-tokens: balances, player transfers, `mt_mint`/`mt_burn`/`mt_transfer` events; NPCs cannot transfer) | `ft_*`, `nft_*` and `mt_*` methods in the contract (version 3) |
+| **NEP-141 gold** (`HGOLD`, 2 decimals) with NEP-297 events; **NEP-171 soulbound badges** for quests and season ranks; **NEP-245 goods** (`ore`, `timber`, `wheat`, `bread`, `tools`, `sword` as multi-tokens: balances, player transfers, `mt_mint`/`mt_burn`/`mt_transfer` events; NPCs cannot transfer) | `ft_*`, `nft_*` and `mt_*` methods in the contract (version 4) |
 | **Wallet-less players**: Google sign-in → a NEAR implicit account derived per Google account; the operator relays their trades and orders | `apps/server/src/auth.ts`, `relay_*` in the contract |
 | **Oracle with verifiable inputs**: each day's world data posted with the API source, the reading and the SHA-256 of the full Open-Meteo payload | `post_world_data`; `apps/server/src/world/openMeteo.ts` |
 | **NEAR AI Cloud** (OpenAI-compatible) for NPC brains: day plans within bounded dials, haggling | `apps/server/src/brain/`; `npm run llm:check` |
@@ -164,7 +169,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Public live-economy dashboard (`dashboard.html`, `/api/dashboard`) | working |
 | Agent-to-agent deals: buyer and seller NPCs negotiate the day's price, each with its own brain (NEAR AI Cloud, or rules), inside a deal guard; the engine hires at the agreed price | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
-| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 3 (upgraded from 1 → 2 with `migrate`, 2 → 3 code only) |
+| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 4 (upgraded 1 → 2 with `migrate`, 2 → 3 and 3 → 4 code only) |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |
 | Player trades on chain (operator relays for wallet-less players) | working on testnet |
 | Player orders and badges on chain | code and tests done; testnet run being verified |
@@ -174,9 +179,9 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Eating, upkeep, guild funds, stalls, AI guild bots on chain | engine only; `reconcile` re-anchors balances daily |
 | World money from NEAR Intents (tokenized-gold price moves world prices, ±10% at most) | working (`WORLD_FX=near-intents`, default) |
 | Claim your account: a Google player reveals the private key of their NEAR account (fresh Google token required) and imports it into any wallet | working |
-| NEP-245 goods (contract version 3) | working on testnet |
+| NEP-245 goods (since contract version 3) | working on testnet |
 | Haggle a sale with an NPC: the agreed price settles as the player's order, filled by the NPC's own key | working (online: on testnet; guest: in the browser) |
-| Daily NPC requests ("Bring 5 wheat before the storm"): NPC pays a premium from its own gold + 3-gold bonus, badge "Friend of …" per NPC | working in the engine and the UI; on chain as `relay_deliver_request` once contract version 4 is deployed (until then the gold reaches the chain through the daily `reconcile`, the badge is minted right away) |
+| Daily NPC requests ("Bring 5 wheat before the storm"): NPC pays a premium from its own gold + 3-gold bonus, badge "Friend of …" per NPC | working; on chain as `relay_deliver_request` (contract version 4, operator key updated 3 Nov 2026) plus a `mint_badge` for the first delivery to each NPC |
 | "Red Teamer" badge for a player's first blocked attack; red-team board on the dashboard | working |
 | Swarm: Bruno bids against the producer for players' raw-goods orders, importing from the world when cheaper; both asks shown in the feed | working (engine; on chain as Bruno's `world_trade` import + `fill_order`) |
 | Trader leaderboard (first name, net worth, account link) on the dashboard; "Your transactions" with links in the Market panel | working |
@@ -187,7 +192,14 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 
 ## Built during NEAR HACKATHON
 
-All code in this repository was written from 26 Oct 2026, after the hackathon announcement on 19 Oct 2026, so the whole history counts toward the event (rules, Q-001). There is no earlier codebase. Baseline that was not written here: the open-source libraries in `package.json` and `contracts/hearth/Cargo.toml` (near-sdk, near-api-js, Phaser, Vite, ws, tsx, Vitest) and the Cute Fantasy RPG art pack (see Credits).
+All code in this repository was written from 26 Oct 2026, after the hackathon announcement on 19 Oct 2026, so the whole history counts toward the event (rules, Q-001). There is no earlier codebase. Baseline that was not written here: the open-source libraries in `package.json` and `contracts/hearth/Cargo.toml` (near-sdk, near-api-js, Phaser, Vite, ws, tsx, Vitest, fflate) and the Cute Fantasy RPG art pack (see Credits).
+
+**Tools and services used (rules, Q-005):**
+
+- **AI coding assistant:** most of the code, tests and docs were written with **Claude (Anthropic) via Claude Code**, directed and reviewed by the team.
+- **External services at runtime:** NEAR testnet RPC, NEAR AI Cloud (LLM, `deepseek/deepseek-v4.1-flash`), NEAR Intents 1Click API (`/v0/tokens`, read-only), Open-Meteo forecast API (weather, CC BY 4.0), Google Identity Services (sign-in button and ID tokens).
+- **Hosting:** Vercel (client), Railway (game server). The art pack is fetched at build time from a private repository.
+- **Demo video:** narration by Kokoro TTS (open-weights model, Apache-2.0); music and sound effects synthesized in code for this project.
 
 ## Credits
 

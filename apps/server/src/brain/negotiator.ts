@@ -41,7 +41,7 @@ export function parseTurn(raw: string): { price?: number; accept: boolean; qty?:
       price: g2c(j.price ?? j.offer ?? j.counter),
       accept: j.accept === true,
       qty: Number.isFinite(Number(j.qty)) ? Math.floor(Number(j.qty)) : undefined,
-      say: typeof j.say === 'string' ? j.say : '',
+      say: typeof j.say === 'string' ? j.say.trim().slice(0, 200) : '',
     };
   } catch {
     return { accept: false, say: raw.slice(0, 200) };
@@ -66,10 +66,13 @@ export async function negotiateLlm(llm: LlmClient, v: Village, p: Pair): Promise
   const transcript = () => rounds.map((r) => `${NPC_DEFS[r.who].name}: ${r.say}${r.price ? ` [${c2g(r.price)} gold]` : ''}${r.accept ? ' [accepts]' : ''}`).join('\n') || '(nothing yet)';
   const ask = async (who: NpcId, role: string) => {
     const messages: ChatMessage[] = [
-      { role: 'system', content: `${situation(v, who, p.item)}\n${role}\nReply with JSON only: {"accept": true|false, "price": <gold per unit, a number>, "qty": <units, buyer only>, "say": "<one short sentence, in character>"}` },
+      { role: 'system', content: `${situation(v, who, p.item)}\n${role}\nReply with JSON only: {"accept": true|false, "price": <gold per unit, a number>, "qty": <units, buyer only>, "say": "<one short sentence, in character>"}. "say" is required and must not be empty.` },
       { role: 'user', content: `Negotiation so far:\n${transcript()}` },
     ];
-    return parseTurn(await llm.complete(messages));
+    const t = parseTurn(await llm.complete(messages));
+    // a silent turn still shows what was offered, marked as such (never invented words)
+    if (!t.say) t.say = t.accept ? '(accepts, no words)' : t.price ? `(offers ${c2g(Math.round(t.price))}, no words)` : '(no words)';
+    return t;
   };
   const buyerRole = `You need ${p.item} to make ${itemUse(p.item)}. You are buying from ${sellerName} for today. Offer a price per unit; accept the seller's last price if it is fair. You may not pay more than you can afford.`;
   const sellerRole = `${buyerName} wants to buy your ${p.item} for today. Accept their last offer if it is fair, or counter with your price per unit.`;

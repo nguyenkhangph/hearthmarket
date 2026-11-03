@@ -69,6 +69,9 @@ interface Call {
 }
 
 const RAW = new Set(['ore', 'timber', 'wheat']);
+/** NPC methods that spend goods or gold the chain may not have after a skipped call */
+const SPENDS_GOODS = new Set(['craft', 'market_sell', 'fill_order', 'world_trade', 'world_import']);
+
 const TGAS: Record<string, number> = { reconcile: 150, post_world_data: 30, relay_place_order: 30 };
 const DEFAULT_TGAS = 20;
 
@@ -95,7 +98,7 @@ export class ChainMirror {
   private aliases = new Map<string, string[]>();
   /** false while nobody is playing: NPC actions stay in the engine, no gas is spent */
   private active = true;
-  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0 };
+  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0, unsynced: 0 };
   /** landed calls per method since the server started */
   readonly byMethod: Record<string, { ok: number; failed: number }> = {};
   /** the last calls that reached the chain, newest last (dashboard) */
@@ -127,8 +130,15 @@ export class ChainMirror {
     const calls = this.translate(signer, method, args);
     if (!calls) return null;
     if (npc && method === 'produce' && this.opts.batchProduce) return this.collect(calls[0]);
+    // an NPC whose earlier call did not reach the chain holds different goods there than in the
+    // game: anything that spends goods would fail, so wait for the next reconcile instead
+    if (npc && this.outOfSync(signer, method, args)) {
+      this.stats.unsynced++;
+      return null;
+    }
     if (npc && method !== 'fill_order' && method !== 'world_import' && !this.withinBudget(signer)) {
       this.stats.budgeted++;
+      this.markDrift(signer);
       return null;
     }
     // goods produced earlier today must be on chain before the NPC sells or hands them over:
@@ -151,10 +161,31 @@ export class ChainMirror {
     return ph;
   };
 
+  /** NPC accounts whose chain state no longer matches the game, until the next reconcile. */
+  private drift = new Map<string, number>();
+  private driftN = 0;
+  private markDrift(signer: string) {
+    this.drift.set(signer, ++this.driftN);
+  }
+
+  private isNpc(signer: string) {
+    return NPCS.some((id) => NPC_DEFS[id].account === signer);
+  }
+
+  /** Calls that spend goods (or rely on a seller's goods) are held back for a drifted NPC. */
+  private outOfSync(signer: string, method: string, args: Record<string, unknown>): boolean {
+    if (!this.drift.size) return false;
+    if (method === 'hire') return this.drift.has(signer) || this.drift.has(String(args.seller));
+    return this.drift.has(signer) && SPENDS_GOODS.has(method);
+  }
+
   // ------------------------------------------------------------------ gas budget
   /** Pause NPC mirroring while nobody is connected; resuming re-anchors the chain at the next day start. */
   setActive(active: boolean) {
-    if (active && !this.active) this.lastDayAt = -Infinity;
+    if (active && !this.active) {
+      this.lastDayAt = -Infinity;
+      for (const id of NPCS) this.markDrift(NPC_DEFS[id].account);
+    }
     this.active = active;
   }
 
@@ -404,15 +435,19 @@ export class ChainMirror {
       gold.push([acct, String(p.gold)]);
       for (const i of ITEMS) items.push([acct, i, p.stock[i]]);
     }
-    const calls: Call[] = [
-      this.op('reconcile', {
-        game_day: v.day,
-        market_stock: ITEMS.map((i) => [i, s.market.stock[i]]),
-        treasury: String(s.market.treasury),
-        gold,
-        items,
-      }),
-    ];
+    const builtAt = this.driftN;
+    const reconcile = this.op('reconcile', {
+      game_day: v.day,
+      market_stock: ITEMS.map((i) => [i, s.market.stock[i]]),
+      treasury: String(s.market.treasury),
+      gold,
+      items,
+    });
+    // the chain now holds the game's numbers again: NPCs that drifted before this point are clean
+    reconcile.onOk = () => {
+      for (const [k, n] of this.drift) if (n <= builtAt) this.drift.delete(k);
+    };
+    const calls: Call[] = [reconcile];
     if (world) {
       const prices = ITEMS.filter((i) => ITEM_DEFS[i].world && s.world.price[i]).map((i) => [i, s.world.price[i]]);
       calls.push(this.op('post_world_data', {
@@ -442,6 +477,7 @@ export class ChainMirror {
     const now = (this.opts.now ?? Date.now)();
     if (!force && (q.size >= (this.opts.maxQueue ?? 8) || !this.allow(now, calls.length))) {
       this.stats.skipped++;
+      if (this.isNpc(signer)) this.markDrift(signer);
       for (const c of calls) c.onFail?.();
       return null;
     }
@@ -481,6 +517,7 @@ export class ChainMirror {
         },
         (e: Error) => {
           this.stats.failed++;
+          if (this.isNpc(signer)) this.markDrift(signer);
           this.log(`chain FAIL ${signer} ${calls.map((c) => c.method).join('+')}: ${e.message}`);
           this.settle(placeholder, `failed:${e.message.replace(/^.*panicked: /, '').slice(0, 60)}`);
         },

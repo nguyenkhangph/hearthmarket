@@ -240,10 +240,28 @@ describe('chain mirror: gas budget', () => {
     // escrow moves are never skipped
     m.hook(playerSigner('khang'), 'place_order', { order_id: 1, item: 'sword', qty: 1, max_price: 2000, deadline_days: 3 });
     await m.idle();
-    expect(m.hook(NPC_DEFS.theo.account, 'fill_order', { order_id: 1, qty: 1, price: 1900 })).toMatch(/^pending/);
+    expect(m.hook(NPC_DEFS.mike.account, 'fill_order', { order_id: 1, qty: 1, price: 1900 })).toMatch(/^pending/);
     expect(m.hook(playerSigner('khang'), 'market_buy', { item: 'wheat', qty: 1, max_price: 210 })).toMatch(/^pending/);
+    // Theo's skipped hire left his chain stock short: goods-spending calls wait for the reconcile
+    expect(m.hook(NPC_DEFS.theo.account, 'craft', { item: 'sword', crafts: 1 })).toBeNull();
+    expect(m.stats.unsynced).toBe(1);
     now += 3_600_001;
-    expect(hire()).toMatch(/^pending/);
+    expect(m.hook(NPC_DEFS.theo.account, 'market_buy', { item: 'ore', qty: 1, max_price: 700 })).toMatch(/^pending/);
+  });
+
+  it('holds back goods-spending calls of a drifted NPC until the next reconcile lands', async () => {
+    let now = 0;
+    const { m, chain } = mirror({ npcCallsPerHour: 1, now: () => now, maxPerMinute: 1000, maxQueue: 100, minDayMs: 0 });
+    const game = new Game({ seed: 3, mirror: m }, new NpcBrain(null), new NpcSigner(chain, CONTRACT), chain);
+    const buy = () => m.hook(NPC_DEFS.theo.account, 'market_buy', { item: 'ore', qty: 1, max_price: 700 });
+    expect(buy()).toMatch(/^pending/);
+    expect(buy()).toBeNull(); // over budget: the chain misses this ore
+    expect(m.hook(NPC_DEFS.theo.account, 'craft', { item: 'sword', crafts: 1 })).toBeNull();
+    expect(m.hook(NPC_DEFS.jack.account, 'hire', { seller: NPC_DEFS.theo.account, item: 'ore', qty: 1, price: 600 })).toBeNull();
+    expect(m.startDay(game.village)).toBe(true);
+    await m.idle();
+    now += 3_600_001;
+    expect(m.hook(NPC_DEFS.theo.account, 'craft', { item: 'sword', crafts: 1 })).toMatch(/^pending/);
   });
 
   it('spends no gas while paused, and re-anchors the chain when a player comes back', () => {
