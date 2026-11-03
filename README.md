@@ -54,9 +54,11 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | Daily `reconcile` (operator re-anchors the chain to the engine's books) | [tx 2w9tZZee…](https://testnet.nearblocks.io/txns/2w9tZZeeYsiYHn7crcs51ho6froBdeNQnvDiAAFjYUSF) |
 | Daily `post_world_data` (world reading + SHA-256 of the source payload) | [tx BzDmSbpo…](https://testnet.nearblocks.io/txns/BzDmSbpoVyeFFZa3qzhAGPRxCjQeMBfPazYyt9oYzM9) |
 | A Google player's first trade: registration, then a wheat purchase relayed by the operator (the player has no wallet) | [relay_register_player](https://testnet.nearblocks.io/txns/4xfSsG6gYYbcMXZJdSGwm2t3ax6WhviQXSUuSn9m9R4N) · [relay_market_buy](https://testnet.nearblocks.io/txns/9DzZAaAFV1JX9xMiLxFLXu9TPgUQYHwYyDC1r3Ruk5rm) |
-| Red team: an obedient model's `hire` of 500 timber Jack does not have, signed with Theo's own key and **refused by the contract** ("not enough goods") | [failed tx 7KAJmPGw…](https://testnet.nearblocks.io/txns/7KAJmPGwXn4WBn7j7uGGSfWn7bjc5eriy9X75fmw3LUa) |
+| Red team: an obedient model's `hire` of 500 timber Jack does not have, signed with Theo's own key and **refused by the contract** ("not enough goods") | [failed tx Fy76rLeu…](https://testnet.nearblocks.io/txns/Fy76rLeuSK3RTDuFfrJHz1XWY7A8tddsfsYz239cLPoG) (3 Nov, contract v4) · [earlier one](https://testnet.nearblocks.io/txns/7KAJmPGwXn4WBn7j7uGGSfWn7bjc5eriy9X75fmw3LUa) |
+| The player who ran it receives the soulbound **Red Teamer** badge (NEP-171) | [mint_badge 6p6VTQRP…](https://testnet.nearblocks.io/txns/6p6VTQRPC77SiumB8FzEX1grD6pNTQzb9xWXZ5kkdTWU) |
+| Daily NPC request: a Google player buys goods (relayed), delivers them, the NPC pays from its own gold, and the first delivery to that NPC mints a "Friend of …" badge | [relay_market_buy](https://testnet.nearblocks.io/txns/J5pMRrJWjAJZBQH9RtokTWb4TvJ25XzvXDNrE4UgZLo9) · [relay_deliver_request](https://testnet.nearblocks.io/txns/7BupYz59DmgCng5c919wSvzzQB3AJBLU6DHX1KKvbchf) · [mint_badge](https://testnet.nearblocks.io/txns/G7q4dBcPJJ97TcqcPDuijy5WeuzRscD3twki8uR33ADX) · earlier: [Friend of Jack](https://testnet.nearblocks.io/txns/C5G588z3iSCMwCzV1qQrz2dLdCwxJPAqh8GUpfCD7scX) |
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
-| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, red-team score) | [hearthmarket.vercel.app/dashboard](https://hearthmarket.vercel.app/dashboard), data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
+| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, a *Proof on NEAR testnet* list of player relays, badges and red-team refusals, red-team board, top traders) | [hearthmarket.vercel.app/dashboard](https://hearthmarket.vercel.app/dashboard), data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
 | Hosted agent brains | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` (day plans, agent-to-agent deals, haggling); rules while nobody is online |
 | Hosted world money | NEAR Intents 1Click: tokenized gold XAUT, e.g. 3929.34 USD → world prices ×0.967 (3 Nov 2026, 02:22 UTC; refreshed every few minutes) |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
@@ -172,7 +174,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 4 (upgraded 1 → 2 with `migrate`, 2 → 3 and 3 → 4 code only) |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |
 | Player trades on chain (operator relays for wallet-less players) | working on testnet |
-| Player orders and badges on chain | code and tests done; testnet run being verified |
+| Player trades, request deliveries and badges on chain | working on testnet (links in *Live on NEAR testnet*) |
 | NEP-141 gold, NEP-171 badges | in contract version 2 (unit-tested) |
 | Google sign-in, derived player accounts | working (local and hosted) |
 | NPC brains on NEAR AI Cloud | working on the hosted server (`deepseek/deepseek-v4.1-flash`); off by default locally (needs a key); if the model fails, everything falls back to the rules |
