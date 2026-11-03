@@ -1,5 +1,7 @@
 import { ITEM_DEFS, NPC_DEFS, RECIPES, type ItemId, type NpcId } from './defs.ts';
 import type { Gold } from './money.ts';
+import { midPrice } from './market.ts';
+import type { Village } from './engine.ts';
 
 /**
  * Deals between NPC agents. A buyer and a seller negotiate a unit price for the day (with
@@ -107,3 +109,35 @@ export function itemUse(item: ItemId): string {
     .map(([p]) => ITEM_DEFS[p as ItemId].name.toLowerCase())
     .join(', ');
 }
+
+const c2g = (c: number) => (c / 100).toFixed(2);
+
+/** The same exchange without a model: concessions of 35% per round, templated words. */
+export function negotiateRules(v: Village, p: { buyer: NpcId; seller: NpcId; item: ItemId }): { agreed: boolean; price?: number; maxQty?: number; rounds: DealRound[] } {
+  const mid = midPrice(p.item, v.s.market.stock[p.item]);
+  const seller = v.s.npcs[p.seller];
+  const scarcity = p.item === 'ore' ? (1 - seller.mineHealth) * 0.3 : 0;
+  let offer = Math.round(mid * 0.92);
+  let ask = Math.round(mid * (1.08 + scarcity));
+  const rounds: DealRound[] = [];
+  const b = NPC_DEFS[p.buyer].name;
+  for (let r = 0; r < DEAL_MAX_ROUNDS; r++) {
+    rounds.push({ who: p.buyer, price: offer, say: r === 0 ? `${c2g(offer)} a unit for your ${p.item}, ${NPC_DEFS[p.seller].name}?` : `I can go to ${c2g(offer)}.` });
+    if (ask - offer <= mid * 0.03) {
+      const price = Math.round((offer + ask) / 2);
+      rounds.push({ who: p.seller, price, accept: true, say: `Fine, ${c2g(price)} it is.` });
+      return { agreed: true, price, maxQty: 12, rounds };
+    }
+    rounds.push({ who: p.seller, price: ask, say: r === 0 ? `Not under ${c2g(ask)}.` : `${c2g(ask)}, last word.` });
+    offer = Math.round(offer + (ask - offer) * 0.35);
+    ask = Math.round(ask - (ask - offer) * 0.35);
+  }
+  const price = Math.round((offer + ask) / 2);
+  if (ask - offer <= mid * 0.06) {
+    rounds.push({ who: p.buyer, price, accept: true, say: `Meet me in the middle at ${c2g(price)}.` });
+    return { agreed: true, price, maxQty: 12, rounds };
+  }
+  rounds.push({ who: p.buyer, say: `Too steep, ${b} will try the market.` });
+  return { agreed: false, rounds };
+}
+
