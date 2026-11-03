@@ -108,13 +108,19 @@ b.blocked { color: var(--down); }
 #quests h4 { margin: 0 0 6px; font: 600 11.5px var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
 #quests .q { font-size: 13px; }
 #quests .q.done { color: var(--up); text-decoration: line-through; opacity: 0.8; }
-#quests { max-height: 46vh; overflow-y: auto; width: 270px; }
-#quests h4 ~ h4 { margin-top: 10px; }
-#quests .req { display: grid; grid-template-columns: 26px 1fr; gap: 6px; font-size: 12.5px; padding: 5px 0; border-top: 1px dashed #5b433088; }
-#quests .req .face { width: 24px; height: 24px; image-rendering: pixelated; }
+#quests { width: 236px; max-height: 38vh; overflow-y: auto; padding: 6px 10px 8px; }
+#quests.closed { width: auto; padding: 4px 8px; }
+#quests .qhead { all: unset; cursor: pointer; display: flex; gap: 8px; align-items: baseline; width: 100%; font: 600 13px 'Pixelify Sans', var(--mono); color: #f0c56b; padding: 2px 0 4px; }
+#quests .qhead .muted { flex: 1; font: 12px var(--sans); color: var(--muted); }
+#quests.closed .qhead { padding: 2px 0; }
+#quests .q { font-size: 12.5px; padding: 2px 0 4px; }
+#quests .req { display: grid; grid-template-columns: 22px 1fr auto; gap: 6px; align-items: center; font-size: 12.5px; padding: 4px 0; border-top: 1px dashed #5b433088; }
+#quests .req .face { width: 22px; height: 22px; image-rendering: pixelated; }
+#quests .req .rtext { line-height: 1.25; min-width: 0; }
 #quests .req.done { opacity: 0.7; }
-#quests .req .mini { margin-top: 4px; font-size: 12px; padding: 2px 8px; }
+#quests .req .mini { font-size: 11px; line-height: 1.15; padding: 2px 6px; text-align: center; }
 #quests .req .mini:disabled { opacity: 0.5; cursor: not-allowed; }
+#quests .badges { margin-top: 4px; }
 
 /* panels */
 .panel { position: absolute; inset: 12px; z-index: 5; background: #1b1e2bf4; border: 1px solid var(--line); border-radius: 12px; padding: 16px; overflow: auto; box-shadow: 0 20px 60px #0009; }
