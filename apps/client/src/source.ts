@@ -1,5 +1,5 @@
 import {
-  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, RED_TEAMER_BADGE, attackAction, checkNpcAction, fmt, rulesHaggle,
+  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, RED_TEAMER_BADGE, attackAction, checkNpcAction, dealPairs, fmt, negotiateRules, rulesHaggle,
   type Action, type ActionResult, type FeedEvent, type NpcId, type VillageState, type WorldDay, type ItemId,
 } from '@hearth/economy';
 import replay from '../../../data/world/replay-kansas-heatwave.json';
@@ -98,6 +98,7 @@ export class LocalSource implements GameSource {
     let left = hours;
     this.timer = setInterval(() => {
       this.v.step();
+      if (this.v.hour === 0) this.negotiate();
       this.updates.forEach((u) => u());
       if (--left <= 0) {
         const done = this.ffDone;
@@ -106,6 +107,14 @@ export class LocalSource implements GameSource {
         done?.();
       }
     }, secondsPerHour * 1000);
+  }
+
+  /** Each morning the agents strike their deals (rules in the browser; the server can use NEAR AI). */
+  negotiate() {
+    for (const p of dealPairs()) {
+      const r = negotiateRules(this.v, p);
+      this.v.setDeal({ ...p, agreed: r.agreed, price: r.price, maxQty: r.maxQty, by: 'rules', rounds: r.rounds });
+    }
   }
 
   /** Guest only: run `days` game days quickly (7 days in about 25 s), then go back to the chosen speed. */

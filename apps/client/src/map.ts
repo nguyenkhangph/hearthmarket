@@ -47,7 +47,7 @@ T('spruce', 2, 17, -1); T('spruce', 2, 19, 0);
 for (const [x, y] of [[40, 20], [43, 22], [46, 19], [40, 25], [44, 26], [47, 24], [41, 29], [46, 29], [48, 15]]) T('medOak', 2, x, y);
 T('bigOak', 2, 45, -2); T('spruce', 2, 48, 3); T('spruce', 2, 40, 0);
 // west & south
-for (const [x, y] of [[0, 12], [3, 13], [0, 29], [33, 28], [36, 25], [20, 27], [6, 9]]) T('medOak', 2, x, y);
+for (const [x, y] of [[0, 12], [3, 13], [0, 29], [33, 28], [36, 25], [20, 27]]) T('medOak', 2, x, y);
 T('bigOak', 2, 32, 21); T('spruce', 2, 2, 20); T('spruce', 2, 34, 13);
 
 export const PROPS: Prop[] = [

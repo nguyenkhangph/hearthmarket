@@ -487,7 +487,7 @@ export class Ui {
       <div class="small"><b>${esc(NPC_DEFS[d.buyer].name)}</b> buys ${esc(d.item)} from <b>${esc(NPC_DEFS[d.seller].name)}</b> · day ${d.day} · <span class="muted">${esc(d.by)}</span> · ${d.status === 'agreed' ? `<b class="up">${fmt(d.price!, 2)}</b>` : '<b class="down">no deal</b>'}</div>
       ${d.rounds.slice(-4).map((r) => `<div class="small"><span class="muted">${esc(NPC_DEFS[r.who].name)}:</span> ${esc(r.say)}</div>`).join('')}
       ${d.guard.length ? `<div class="small down">deal guard: ${esc(d.guard.join('; '))}</div>` : ''}
-    </div>`).join('') || '<div class="muted small">No deal yet today. Agents negotiate at the start of each day (online village).</div>'}
+    </div>`).join('') || '<div class="muted small">No deal yet today. Agents negotiate at the start of each day.</div>'}
     <h3>Haggle with ${esc(def.name)}</h3>
     <div class="chat">${this.haggleLog.slice(-6).map((m) => `<div class="msg ${m.who}">${m.html ?? esc(m.text)}</div>`).join('')}</div>
     <div class="row"><input name="haggle" placeholder="${def.produces[0] ? `e.g. 3 ${def.produces[0]} for ${fmt(Math.round(midPrice(def.produces[0], v.s.market.stock[def.produces[0]]) * 1.02), 1)}` : 'Ask Bruno about the world'}" class="grow"><button data-act="haggle">Send</button></div>
