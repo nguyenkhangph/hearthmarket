@@ -72,6 +72,8 @@ const RAW = new Set(['ore', 'timber', 'wheat']);
 /** NPC methods that spend goods or gold the chain may not have after a skipped call */
 const SPENDS_GOODS = new Set(['craft', 'market_sell', 'fill_order', 'world_trade', 'world_import']);
 
+const PROOF_METHODS = new Set(['relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order', 'relay_deliver_request', 'mint_badge']);
+
 const TGAS: Record<string, number> = { reconcile: 150, post_world_data: 30, relay_place_order: 30 };
 const DEFAULT_TGAS = 20;
 
@@ -101,6 +103,8 @@ export class ChainMirror {
   readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0, unsynced: 0 };
   /** landed calls per method since the server started */
   readonly byMethod: Record<string, { ok: number; failed: number }> = {};
+  /** relays, badges and red-team refusals, newest last (dashboard "proof" list) */
+  readonly proofs: ChainEvent[] = [];
   /** the last calls that reached the chain, newest last (dashboard) */
   readonly events: ChainEvent[] = [];
   /** called with (placeholder, final hash or `failed:...`) */
@@ -245,8 +249,14 @@ export class ChainMirror {
     const m = (this.byMethod[e.method] ??= { ok: 0, failed: 0 });
     if (e.ok) m.ok++;
     else m.failed++;
-    this.events.push({ at: (this.opts.now ?? Date.now)(), ...e });
+    const ev = { at: (this.opts.now ?? Date.now)(), ...e };
+    this.events.push(ev);
     if (this.events.length > RECENT_CAP) this.events.splice(0, this.events.length - RECENT_CAP);
+    // player-facing proof (relays, badges, red-team refusals) is kept apart so routine NPC calls do not push it out
+    if (e.hash && (e.redTeam || PROOF_METHODS.has(e.method))) {
+      this.proofs.push(ev);
+      if (this.proofs.length > 40) this.proofs.splice(0, this.proofs.length - 40);
+    }
   }
 
   private settle(placeholder: string, hash: string) {

@@ -32,6 +32,7 @@ type Dash = {
     stats: Record<string, number | boolean>;
     byMethod: Record<string, { ok: number; failed: number }>;
     events: { at: number; signer: string; method: string; ok: boolean; hash?: string; reason?: string; redTeam?: boolean }[];
+    proofs?: { at: number; signer: string; method: string; ok: boolean; hash?: string; reason?: string; redTeam?: boolean }[];
     balances: Record<string, number>;
   };
   redTeam: { runs: number; blocked: number; bySigner: number; byContract: number; onChain: number; last?: { attack: string; npc: string; layer?: string; hash?: string; at: number } };
@@ -162,6 +163,11 @@ function render(d: Dash) {
     <td>${e.ok ? '<span class="up">ok</span>' : `<span class="down">refused</span> <span class="muted small">${esc(e.reason ?? '')}</span>`}</td>
     <td class="mono">${txLink(e.hash)}</td></tr>`).join('') || '<tr><td class="muted small">No calls since the server started. The chain sleeps while nobody plays: open the village to wake it.</td></tr>'}</tbody></table>`
     : '<p class="muted">This server runs without a chain (CHAIN=mock).</p>'}
+</section>
+
+<section class="card">
+  <h2>Proof on NEAR testnet <span class="muted small">player relays, badges, red-team refusals</span></h2>
+  ${(oc?.proofs ?? []).length ? oc!.proofs!.slice(0, 12).map((e) => `<div class="kv small"><span class="mono">${esc(e.method)}${e.redTeam ? ' <span class="tag red">red team</span>' : ''} ${e.ok ? '<span class="up">ok</span>' : '<span class="down">refused</span>'}</span><span>${txLink(e.hash)} <span class="muted">${ago(d.at - e.at)}</span></span></div>`).join('') : '<p class="muted small">Sign in, trade, deliver a request or run the red team: the transactions appear here.</p>'}
 </section>
 
 <section class="card">
