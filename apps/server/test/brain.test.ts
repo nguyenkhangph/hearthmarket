@@ -131,3 +131,14 @@ describe('haggling when the model is down', () => {
     expect(p.brain).toMatch(/^rules \(NEAR AI Cloud unavailable: HTTP 402/);
   });
 });
+
+describe('reading model replies', () => {
+  it('skips a <think> block with braces, code fences and other key names', async () => {
+    const { parsePlan } = await import('../src/brain/brain.ts');
+    const { parseTurn } = await import('../src/brain/negotiator.ts');
+    expect(parsePlan('<think>maybe {"plan": {"sellShare": 1}} no...</think>\n```json\n{"plan": {"sellShare": 0.4}, "why": "Ore is cheap."}\n```'))
+      .toEqual({ proposal: { sellShare: 0.4 }, why: 'Ore is cheap.' });
+    expect(parsePlan('{"sellShare": 0.5, "floorPct": 80, "reason": "Stock is high."}')).toEqual({ proposal: { sellShare: 0.5, floorPct: 80 }, why: 'Stock is high.' });
+    expect(parseTurn('<think>{x}</think>{"accept": false, "price": 5.9, "say": "Not under 5.90."}')).toMatchObject({ accept: false, price: 590, say: 'Not under 5.90.' });
+  });
+});

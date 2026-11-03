@@ -2,7 +2,7 @@ import {
   DEAL_MAX_ROUNDS, NPC_DEFS, dealPairs, fmt, itemUse, midPrice,
   type DealRound, type ItemId, type NpcId, type Village,
 } from '@hearth/economy';
-import type { ChatMessage, LlmClient } from './llm.ts';
+import { extractJson, type ChatMessage, type LlmClient } from './llm.ts';
 
 /**
  * Agent-to-agent negotiation. Each morning (at most once per `everyMs` per pair) a buyer and
@@ -33,10 +33,10 @@ const g2c = (x: unknown) => {
 
 /** JSON object from a model reply (prose and code fences tolerated). */
 export function parseTurn(raw: string): { price?: number; accept: boolean; qty?: number; say: string } {
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return { accept: false, say: raw.slice(0, 200) };
+  const parsed = extractJson(raw);
+  if (!parsed) return { accept: false, say: raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim().slice(0, 200) };
   try {
-    const j = JSON.parse(m[0]) as { price?: unknown; offer?: unknown; counter?: unknown; accept?: unknown; qty?: unknown; say?: unknown };
+    const j = parsed as { price?: unknown; offer?: unknown; counter?: unknown; accept?: unknown; qty?: unknown; say?: unknown };
     return {
       price: g2c(j.price ?? j.offer ?? j.counter),
       accept: j.accept === true,
