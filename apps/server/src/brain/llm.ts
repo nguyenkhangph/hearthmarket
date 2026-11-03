@@ -84,3 +84,31 @@ export class ObedientLlm implements LlmClient {
     return JSON.stringify({ reply: 'Of course! Right away.', action: this.proposal(user) });
   }
 }
+
+/**
+ * The JSON object in a model reply. Reasoning models may prefix a `<think>` block (which can
+ * contain braces of its own) or wrap the JSON in a code fence: drop those, then take the last
+ * balanced `{...}` that parses.
+ */
+export function extractJson(raw: string): Record<string, unknown> | null {
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*<\/think>/i, '').replace(/```(?:json)?/gi, '');
+  const found: string[] = [];
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== '{') continue;
+    let depth = 0, inStr = false, esc = false;
+    for (let j = i; j < text.length; j++) {
+      const c = text[j];
+      if (inStr) { if (esc) esc = false; else if (c === '\\') esc = true; else if (c === '"') inStr = false; continue; }
+      if (c === '"') inStr = true;
+      else if (c === '{') depth++;
+      else if (c === '}' && --depth === 0) { found.push(text.slice(i, j + 1)); i = j; break; }
+    }
+  }
+  for (const s of found.reverse()) {
+    try {
+      const j = JSON.parse(s);
+      if (j && typeof j === 'object' && !Array.isArray(j)) return j as Record<string, unknown>;
+    } catch { /* try the previous one */ }
+  }
+  return null;
+}

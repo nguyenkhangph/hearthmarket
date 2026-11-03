@@ -2,7 +2,7 @@ import {
   ITEMS, NPC_DEFS, rulesHaggle, NPC_ALLOWED_METHODS, PLAN_HELP, fmt, midPrice, marketView,
   type Action, type NpcId, type Village, type ItemId,
 } from '@hearth/economy';
-import type { ChatMessage, LlmClient } from './llm.ts';
+import { extractJson, type ChatMessage, type LlmClient } from './llm.ts';
 
 /** A sale the NPC agrees to make to the player, at a price per unit (centigold). */
 export interface DealOffer {
@@ -121,7 +121,7 @@ export class NpcBrain {
       out = { proposal: Object.keys(p2.proposal).length ? p2.proposal : out.proposal, why: p2.why };
     }
     // still nothing: say so plainly instead of leaving the bubble empty
-    if (!out.why.trim()) out.why = `(the model gave no reason; the numbers it saw: ${saw.slice(0, 110)})`;
+    if (!out.why.trim()) out.why = Object.keys(out.proposal).length ? '(the model set the dials but gave no reason)' : '(no answer from the model; yesterday\'s routine stays)';
     return { ...out, saw };
   }
 
@@ -133,23 +133,23 @@ export class NpcBrain {
 
 /** Plan JSON from a model reply; anything unparseable becomes an empty plan (the routine stays). */
 export function parsePlan(raw: string): { proposal: Record<string, unknown>; why: string } {
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return { proposal: {}, why: '' };
-  try {
-    const j = JSON.parse(m[0]) as { plan?: unknown; why?: unknown };
-    const plan = j.plan && typeof j.plan === 'object' && !Array.isArray(j.plan) ? (j.plan as Record<string, unknown>) : {};
-    return { proposal: plan, why: typeof j.why === 'string' ? j.why.slice(0, 160) : '' };
-  } catch {
-    return { proposal: {}, why: '' };
-  }
+  const j = extractJson(raw);
+  if (!j) return { proposal: {}, why: '' };
+  const nested = j.plan ?? j.dials;
+  // some replies put the dials at the top level next to "why"
+  const plan = nested !== undefined
+    ? (nested && typeof nested === 'object' && !Array.isArray(nested) ? (nested as Record<string, unknown>) : {})
+    : Object.fromEntries(Object.entries(j).filter(([k]) => !['why', 'reason', 'reasoning', 'rationale'].includes(k)));
+  const why = [j.why, j.reason, j.reasoning, j.rationale].find((x) => typeof x === 'string' && x.trim()) as string | undefined;
+  return { proposal: plan, why: (why ?? '').trim().slice(0, 160) };
 }
 
 /** Robust JSON extraction: the model may wrap JSON in prose or code fences. */
 export function parseProposal(raw: string): { reply: string; action: Action | null; deal?: DealOffer } {
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return { reply: raw.trim().slice(0, 300), action: null };
+  const parsed = extractJson(raw);
+  if (!parsed) return { reply: raw.replace(/<think>[\s\S]*?<\/think>/gi, '').trim().slice(0, 300), action: null };
   try {
-    const j = JSON.parse(m[0]) as { reply?: unknown; action?: unknown; deal?: unknown };
+    const j = parsed as { reply?: unknown; action?: unknown; deal?: unknown };
     const reply = typeof j.reply === 'string' ? j.reply.slice(0, 300) : '';
     const d = j.deal as { item?: unknown; qty?: unknown; price?: unknown } | null | undefined;
     const deal = d && typeof d === 'object' && ITEMS.includes(d.item as ItemId) && Number.isFinite(Number(d.qty)) && Number.isFinite(Number(d.price))
