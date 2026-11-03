@@ -80,6 +80,8 @@ export class ChainMirror {
   private lastDayAt = -Infinity;
   /** engine order id -> on-chain order id, set once the relay landed */
   private orders = new Map<number, number>();
+  /** engine order id -> the operator queue tail that lands its relay (until it has landed) */
+  private orderLanding = new Map<number, Promise<unknown>>();
   /** players whose registration landed / is queued */
   private registered = new Set<string>();
   private registrationQueued = new Set<string>();
@@ -134,7 +136,19 @@ export class ChainMirror {
     const deps = npc && this.opts.batchProduce
       ? this.flushProduce([signer, ...(method === 'hire' && args.seller ? [String(args.seller)] : [])])
       : [];
-    return this.enqueue(calls, false, deps);
+    const landing = npc && method === 'fill_order' ? this.orderLanding.get(Number(args.order_id)) : undefined;
+    if (landing) deps.push(landing);
+    const ph = this.enqueue(calls, false, deps);
+    // remember when a player's order relay will have landed, for an NPC fill that follows at once
+    if (ph && !npc && method === 'place_order' && this.opts.operator) {
+      const tail = this.queues.get(this.opts.operator)?.tail;
+      if (tail) {
+        const engineId = Number(args.order_id);
+        this.orderLanding.set(engineId, tail);
+        void tail.finally(() => this.orderLanding.delete(engineId));
+      }
+    }
+    return ph;
   };
 
   // ------------------------------------------------------------------ gas budget
@@ -291,7 +305,9 @@ export class ChainMirror {
         case 'market_sell':
           return [call('market_sell', { item: args.item, qty, min_price: lenientMin(Number(args.min_price)) })];
         case 'fill_order': {
-          const id = this.orders.get(Number(args.order_id));
+          // a relayed order still on its way (a haggled sale) has its chain id already; the fill waits for it
+          const oid = Number(args.order_id);
+          const id = this.orders.get(oid) ?? (this.orderLanding.has(oid) ? this.chainOrderId(oid) : undefined);
           return id ? [call('fill_order', { order_id: id, qty, price: args.price })] : null;
         }
         case 'world_trade': {

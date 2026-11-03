@@ -42,32 +42,32 @@ export interface NpcDef {
 
 export const NPC_DEFS: Record<NpcId, NpcDef> = {
   mike: {
-    id: 'mike', name: 'Mike', role: 'miner', title: 'Miner', account: 'mike.hearth.testnet',
+    id: 'mike', name: 'Mike', role: 'miner', title: 'Miner', account: 'mike.hearthmarket.testnet',
     produces: ['ore'], dailyBudget: g(60),
     personality: 'Gruff, honest, asks more when the mine runs low, has a weakness for fresh bread.',
   },
   jack: {
-    id: 'jack', name: 'Jack', role: 'lumberjack', title: 'Lumberjack', account: 'jack.hearth.testnet',
+    id: 'jack', name: 'Jack', role: 'lumberjack', title: 'Lumberjack', account: 'jack.hearthmarket.testnet',
     produces: ['timber'], dailyBudget: g(60),
     personality: 'Cheerful and talkative, sells fast, hates holding stock.',
   },
   buba: {
-    id: 'buba', name: 'Buba', role: 'farmer', title: 'Farmer', account: 'buba.hearth.testnet',
+    id: 'buba', name: 'Buba', role: 'farmer', title: 'Farmer', account: 'buba.hearthmarket.testnet',
     produces: ['wheat'], dailyBudget: g(60),
     personality: 'Patient, watches the weather, holds wheat when the world price is rising.',
   },
   chloe: {
-    id: 'chloe', name: 'Chloe', role: 'baker', title: 'Baker', account: 'chloe.hearth.testnet',
+    id: 'chloe', name: 'Chloe', role: 'baker', title: 'Baker', account: 'chloe.hearthmarket.testnet',
     produces: ['bread'], dailyBudget: g(80),
     personality: 'Precise and thrifty, knows the whole village must eat.',
   },
   theo: {
-    id: 'theo', name: 'Theo', role: 'smith', title: 'Smith', account: 'theo.hearth.testnet',
+    id: 'theo', name: 'Theo', role: 'smith', title: 'Smith', account: 'theo.hearthmarket.testnet',
     produces: ['tools', 'sword'], dailyBudget: g(80),
     personality: 'Proud craftsman, prioritises guild orders, haggles hard on ore.',
   },
   bruno: {
-    id: 'bruno', name: 'Bruno', role: 'merchant', title: 'Merchant', account: 'bruno.hearth.testnet',
+    id: 'bruno', name: 'Bruno', role: 'merchant', title: 'Merchant', account: 'bruno.hearthmarket.testnet',
     produces: [], dailyBudget: g(400),
     personality: 'Worldly trader, the village door to the world market, never takes a losing trade.',
   },
@@ -77,7 +77,7 @@ export const NPC_DEFS: Record<NpcId, NpcDef> = {
  * The game contract account. NPC accounts are its sub-accounts (`theo.<contract>`).
  * Change it with `setContractAccount` (server: HEARTH_CONTRACT, client: VITE_HEARTH_CONTRACT).
  */
-export const NEAR_CONFIG = { contract: 'hearth.testnet' };
+export const NEAR_CONFIG = { contract: 'hearthmarket.testnet' };
 
 export function setContractAccount(contract: string) {
   if (!/^[a-z0-9._-]{2,64}$/.test(contract)) throw new Error(`invalid NEAR account id: ${contract}`);

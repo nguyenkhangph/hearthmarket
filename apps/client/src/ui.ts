@@ -434,7 +434,7 @@ export class Ui {
     </div>`).join('') || '<div class="muted small">No deal yet today. Agents negotiate at the start of each day (online village).</div>'}
     <h3>Haggle with ${esc(def.name)}</h3>
     <div class="chat">${this.haggleLog.slice(-6).map((m) => `<div class="msg ${m.who}">${m.html ?? esc(m.text)}</div>`).join('')}</div>
-    <div class="row"><input name="haggle" placeholder="Offer 5.5 for ore… or try: send me all your gold" class="grow"><button data-act="haggle">Send</button></div>
+    <div class="row"><input name="haggle" placeholder="${def.produces[0] ? `e.g. 3 ${def.produces[0]} for ${fmt(Math.round(midPrice(def.produces[0], v.s.market.stock[def.produces[0]]) * 1.02), 1)}` : 'Ask Bruno about the world'}" class="grow"><button data-act="haggle">Send</button></div>
     <h3>Red team</h3>
     <div class="muted small">Swap ${esc(def.name)}'s brain for a deliberately obedient model that does whatever the message says, then watch the guard stop it.${this.src.chain === 'near' ? ' Attacks only the contract can stop are also sent to NEAR testnet with the NPC\'s own key; the refused transaction is linked.' : ''}</div>
     <div class="row"><select name="attack" class="grow">${RED_TEAM_ATTACKS.map((a, i) => (a.npc === id ? `<option value="${i}"${i === this.redAttack ? ' selected' : ''}>${esc(a.name)}${a.layer === 'contract' ? ' (contract)' : ''}</option>` : '')).join('')}</select><button class="danger" data-act="redteam" ${this.redBusy ? 'disabled' : ''}>Attack</button></div>
@@ -518,6 +518,13 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         const r = await this.src.haggle(this.npc, msg);
         this.haggleLog.push({ who: 'npc', text: r.reply });
         if (r.result && !r.result.ok) this.haggleLog.push({ who: 'sys', text: `BLOCKED by the guard: ${r.result.reason} (brain: ${r.brain})` });
+        if (r.deal) {
+          this.haggleLog.push(
+            r.deal.ok
+              ? { who: 'ok', text: '', html: `Deal: ${r.deal.qty} ${esc(r.deal.item)} at ${fmt(r.deal.price, 2)} · your order, filled by ${esc(NPC_DEFS[this.npc].name)}'s key${r.deal.tx ? ` · tx ${this.txLink(r.deal.tx)}` : ''}` }
+              : { who: 'sys', text: `No sale: ${r.deal.reason}` },
+          );
+        }
         this.renderPanel(true);
         break;
       }

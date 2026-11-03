@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkPlan, createVillage, g, NPCS, RULES, type Village } from '@hearth/economy';
+import { checkPlan, createVillage, g, NPC_DEFS, NPCS, RULES, type Village } from '@hearth/economy';
 import { NpcBrain, parsePlan } from '../src/brain/brain.ts';
 import { DayPlanner } from '../src/brain/planner.ts';
 import { OpenAiCompatible, type ChatMessage, type LlmClient } from '../src/brain/llm.ts';
@@ -66,7 +66,7 @@ describe('day plans: with the engine', () => {
       const v = createVillage({ seed: 9 });
       if (share !== undefined) v.setPlan('buba', { sellShare: share }, 'test');
       v.runDays(1);
-      return v.s.txs.filter((t) => t.signer === 'buba.hearth.testnet' && t.method === 'market_sell').length;
+      return v.s.txs.filter((t) => t.signer === NPC_DEFS.buba.account && t.method === 'market_sell').length;
     };
     expect(run(0)).toBe(0);
     expect(run()).toBeGreaterThan(0);

@@ -131,8 +131,8 @@ describe('players, orders, guilds', () => {
     expect(midPrice('ore', 100)).toBeLessThan(midPrice('ore', ITEM_DEFS.ore.target));
   });
 
-  it('each NPC has a NEAR sub-account under hearth', () => {
-    for (const id of NPCS) expect(NPC_DEFS[id].account.endsWith('.hearth.testnet')).toBe(true);
+  it('each NPC has a NEAR sub-account under the live contract account', () => {
+    for (const id of NPCS) expect(NPC_DEFS[id].account.endsWith('.hearthmarket.testnet')).toBe(true);
   });
 
   it('can move to another contract account', () => {

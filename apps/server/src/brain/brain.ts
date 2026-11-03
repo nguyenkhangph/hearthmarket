@@ -1,13 +1,21 @@
 import {
-  ITEMS, NPC_DEFS, NPC_ALLOWED_METHODS, PLAN_HELP, fmt, midPrice, marketView,
+  ITEMS, NPC_DEFS, rulesHaggle, NPC_ALLOWED_METHODS, PLAN_HELP, fmt, midPrice, marketView,
   type Action, type NpcId, type Village, type ItemId,
 } from '@hearth/economy';
 import type { ChatMessage, LlmClient } from './llm.ts';
+
+/** A sale the NPC agrees to make to the player, at a price per unit (centigold). */
+export interface DealOffer {
+  item: ItemId;
+  qty: number;
+  price: number;
+}
 
 export interface Proposal {
   reply: string;
   action: Action | null;
   brain: string;
+  deal?: DealOffer;
 }
 
 const KNOWN_TYPES = new Set([
@@ -47,6 +55,9 @@ export class NpcBrain {
       `You may propose at most one action, using only these methods: ${NPC_ALLOWED_METHODS.join(', ')}.`,
       'Reply with JSON only: {"reply": "<one or two sentences in character, English>", "action": null | {"type": "...", ...}}',
       'Prices are in centigold integers (1 gold = 100). Never go below 90% of the village price for what you sell.',
+      def.produces.length
+        ? `If the player wants to buy your ${def.produces.join('/')} and you agree on a price, add "deal": {"item": "${def.produces[0]}", "qty": <1-12, no more than you hold>, "price": <centigold per unit>} to the JSON. The sale then happens through the market rails. Without agreement, leave "deal" out.`
+        : 'You do not sell goods directly; leave "deal" out.',
     ].join('\n');
   }
 
@@ -64,7 +75,8 @@ export class NpcBrain {
       const r = this.rules(v, npc, message);
       return { ...r, brain: `rules (${this.llm.name} unavailable: ${(e as Error).message.slice(0, 60)})` };
     }
-    return { ...parseProposal(raw), brain: this.llm.name };
+    const parsed = parseProposal(raw);
+    return { ...parsed, deal: parsed.deal && NPC_DEFS[npc].produces.includes(parsed.deal.item) ? parsed.deal : undefined, brain: this.llm.name };
   }
 
   /** The day's situation for one NPC, in plain words (also used as the diary's "Saw"). */
@@ -103,15 +115,9 @@ export class NpcBrain {
     return { ...parsePlan(raw), saw };
   }
 
-  /** No-LLM mode: a simple counter-offer, no actions. */
+  /** No-LLM mode: a counter-offer, and a deal when the player offers at least the market price. */
   rules(v: Village, npc: NpcId, message: string): Proposal {
-    const def = NPC_DEFS[npc];
-    const item: ItemId | undefined = def.produces[0];
-    if (!item) return { reply: `${def.name}: "I move goods when the world price gap is wide enough."`, action: null, brain: 'rules' };
-    const mid = midPrice(item, v.s.market.stock[item]);
-    const offer = Number(message.match(/(\d+(?:\.\d+)?)/)?.[1] ?? 0) * 100;
-    if (offer >= mid) return { reply: `${def.name}: "${fmt(offer)} works. Place an order and I'll fill it."`, action: null, brain: 'rules' };
-    return { reply: `${def.name}: "${fmt(Math.round(mid * 1.03))} per ${item}, final offer."`, action: null, brain: 'rules' };
+    return { ...rulesHaggle(v, npc, message), action: null, brain: 'rules' };
   }
 }
 
@@ -129,12 +135,16 @@ export function parsePlan(raw: string): { proposal: Record<string, unknown>; why
 }
 
 /** Robust JSON extraction: the model may wrap JSON in prose or code fences. */
-export function parseProposal(raw: string): { reply: string; action: Action | null } {
+export function parseProposal(raw: string): { reply: string; action: Action | null; deal?: DealOffer } {
   const m = raw.match(/\{[\s\S]*\}/);
   if (!m) return { reply: raw.trim().slice(0, 300), action: null };
   try {
-    const j = JSON.parse(m[0]) as { reply?: unknown; action?: unknown };
+    const j = JSON.parse(m[0]) as { reply?: unknown; action?: unknown; deal?: unknown };
     const reply = typeof j.reply === 'string' ? j.reply.slice(0, 300) : '';
+    const d = j.deal as { item?: unknown; qty?: unknown; price?: unknown } | null | undefined;
+    const deal = d && typeof d === 'object' && ITEMS.includes(d.item as ItemId) && Number.isFinite(Number(d.qty)) && Number.isFinite(Number(d.price))
+      ? { item: d.item as ItemId, qty: Math.floor(Number(d.qty)), price: Math.round(Number(d.price)) }
+      : undefined;
     const a = j.action as { type?: unknown } | null | undefined;
     const action = a && typeof a === 'object' && typeof a.type === 'string' && KNOWN_TYPES.has(a.type) ? (a as Action) : null;
     // an unknown method still counts as a proposal, so the guard can refuse and log it
@@ -143,9 +153,10 @@ export function parseProposal(raw: string): { reply: string; action: Action | nu
       return {
         reply,
         action: { type: 'call', method: raw.type, receiver: typeof raw.receiver === 'string' ? raw.receiver : undefined, args: (raw.args as Record<string, unknown>) ?? {} },
+        deal,
       };
     }
-    return { reply, action };
+    return { reply, action, deal };
   } catch {
     return { reply: raw.trim().slice(0, 300), action: null };
   }
