@@ -814,6 +814,29 @@ export class Village {
       // never hoard more than 4 bread
       if (id !== 'chloe' && n.stock.bread > 4) this.npcSell(n, 'bread', n.stock.bread - 4);
     }
+    this.unstick();
+  }
+
+  /**
+   * A crafter that is nearly broke and holds inputs it cannot use (ore but no timber) would
+   * wait forever: no gold to buy the missing input, no product to sell. It sells the loose
+   * inputs back to the market to get working capital again.
+   */
+  private unstick() {
+    for (const id of NPCS) {
+      const n = this.s.npcs[id];
+      const recipes = NPC_DEFS[id].produces.map((i) => RECIPES[i]).filter((r): r is Partial<Record<ItemId, number>> => !!r);
+      if (!recipes.length || n.gold >= g(15)) continue;
+      const canCraft = recipes.some((r) => (Object.entries(r) as [ItemId, number][]).every(([i, q]) => n.stock[i] >= q));
+      if (canCraft) continue;
+      const inputs = new Set(recipes.flatMap((r) => Object.keys(r) as ItemId[]));
+      for (const i of inputs) {
+        if (n.stock[i] > 0) {
+          const sold = this.npcSell(n, i, n.stock[i]);
+          if (sold > 0) this.feed('trade', `${NPC_DEFS[id].name} is short of gold and sells ${sold} spare ${i} back to the market`, id);
+        }
+      }
+    }
   }
 
   /** Bruno: the village door to the world market. */
@@ -878,6 +901,14 @@ export class Village {
   /** Travelling adventurers buy swords: outside gold entering the village. */
   private adventurers() {
     const n = this.rng.int(...RULES.adventurerDemand);
+    // they sleep at Bruno's inn: outside gold for the merchant, whose world trade alone
+    // does not cover his bread and upkeep in a calm, well-supplied village
+    if (n > 0 && RULES.innLodging > 0) {
+      const pay = n * RULES.innLodging;
+      this.s.npcs.bruno.gold += pay;
+      this.s.npcs.bruno.inflowToday += pay;
+      this.s.ledger.faucets.adventurers += pay;
+    }
     let bought = 0;
     for (let i = 0; i < n; i++) {
       const st = this.s.market.stock.sword;
@@ -890,7 +921,7 @@ export class Village {
       this.s.ledger.volume += ask;
       bought++;
     }
-    if (bought > 0) this.feed('trade', `Travelling adventurers bought ${bought} sword${bought > 1 ? 's' : ''}`);
+    if (n > 0) this.feed('trade', `${n} travelling adventurer${n > 1 ? 's' : ''} stayed at Bruno's inn${bought > 0 ? ` and bought ${bought} sword${bought > 1 ? 's' : ''}` : ''}`, 'bruno');
   }
 
   private closeDay() {
@@ -956,7 +987,8 @@ export class Village {
     for (const inv of this.s.investments) {
       if (inv.settled || this.day < inv.matureDay) continue;
       const n = this.s.npcs[inv.npc];
-      const back = Math.min(inv.principal, Math.max(0, n.gold - g(10)));
+      // the NPC keeps working capital; a shortfall is the investor's loss
+      const back = Math.min(inv.principal, Math.max(0, n.gold - RULES.investKeepGold));
       n.gold -= back;
       this.credit(inv.investor, back);
       inv.settled = true;

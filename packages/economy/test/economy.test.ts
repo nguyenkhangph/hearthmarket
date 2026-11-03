@@ -142,3 +142,22 @@ describe('players, orders, guilds', () => {
     expect(() => setContractAccount('Bad Name!')).toThrow();
   });
 });
+
+describe('long run (a hosted server runs hundreds of game days)', () => {
+  it('no NPC goes broke and prices stay in range over 250 days', () => {
+    for (const seed of [42, 1234]) {
+      const v = createVillage({ seed });
+      let lo = Infinity, hi = 0, minGold = Infinity;
+      for (let d = 0; d < 250; d++) {
+        v.runDays(1);
+        const ix = v.s.dailyStats.at(-1)!.priceIndex;
+        lo = Math.min(lo, ix); hi = Math.max(hi, ix);
+        if (d > 30) for (const id of NPCS) minGold = Math.min(minGold, v.s.npcs[id].gold);
+      }
+      expect(minGold, `seed ${seed}: an NPC went broke`).toBeGreaterThan(g(5));
+      expect(lo, `seed ${seed}: deflation`).toBeGreaterThan(80);
+      expect(hi, `seed ${seed}: inflation`).toBeLessThan(110);
+      expect(conservationGap(v)).toBe(0);
+    }
+  }, 60_000);
+});

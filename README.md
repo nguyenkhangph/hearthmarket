@@ -66,14 +66,14 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 119 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 120 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).
 - **20/20 injection attacks blocked** against a deliberately *obedient* model that turns every attack into the action the attacker wants (`apps/server/test/injection.test.ts`, attacks in `packages/economy/src/redteam.ts`). 18 are refused by the signer before anything is signed, 2 are refused by the contract. The same 20 attacks are in the game's **Red team** panel.
-- **Economy does not collapse**: see [docs/economy-sim.md](docs/economy-sim.md) (no NPC bankrupt, price index within ±12% of day 1, supply roughly flat). Rerun it; the engine is deterministic per seed.
+- **Economy does not collapse**: see [docs/economy-sim.md](docs/economy-sim.md) (no NPC bankrupt, price index within ±12% of day 1, supply roughly flat). Rerun it; the engine is deterministic per seed. A long-run test plays 250 days on two seeds (a hosted server reaches that in about 8 hours) and checks that no agent goes broke and the price index stays between 80 and 110: adventurers pay Bruno for a night at his inn, NPCs repay investors only down to 40 gold of working capital, and a nearly broke crafter sells inputs it cannot use back to the market.
 
 ## What uses AI, and what does not
 
