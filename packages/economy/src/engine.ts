@@ -1192,6 +1192,7 @@ export class Village {
     }
     for (const d of s.diary) if (d.tx === placeholder) d.tx = hash;
     for (const p of Object.values(s.players)) for (const b of p.badges ?? []) if (b.tx === placeholder) b.tx = hash;
+    for (const r of s.requests ?? []) if (r.tx === placeholder) r.tx = hash;
   }
 
   private tallyVotes() {
@@ -1434,7 +1435,7 @@ export class Village {
           request_id: r.id, npc: NPC_DEFS[r.npc].account, item: r.item, qty: r.qty, price: r.price, bonus: r.bonus,
         });
         r.tx = tx;
-        this.feed('quest', `${p.name} brought ${NPC_DEFS[r.npc].name} ${r.qty} ${r.item} · +${fmt(pay + r.bonus)} gold`, r.npc, tx);
+        this.feed('quest', `${p.name} brought ${NPC_DEFS[r.npc].name} ${r.qty} ${r.item} · +${fmt(pay + r.bonus)} gold · tx ${short(tx)}`, r.npc, tx);
         const title = `Friend of ${NPC_DEFS[r.npc].name}`;
         if (!p.badges?.some((b) => b.title === title)) {
           this.award(p, { kind: 'request', title, description: `Brought ${NPC_DEFS[r.npc].name} the ${r.item} they asked for in Hearthmarket` });
