@@ -135,6 +135,24 @@ cd ..\..
 
 `get_version` must print `"3"`. Keys, NPCs and balances stay as they are; the server needs no restart.
 
+## Upgrade from version 3 to 4 (NPC requests on chain)
+
+Version 4 adds `relay_deliver_request`: a player hands an NPC the goods it asked for, the NPC pays from its own gold (inside its daily budget, at most 1.5× the market mid) and a bonus of at most 10 gold is minted with memo "request bonus". Same stored state, so **no migrate call**. The operator key needs the new method, so replace only that key afterwards.
+
+```powershell
+cd contracts\hearth
+cargo near build non-reproducible-wasm --no-abi
+near contract deploy hearthmarket.testnet use-file target\near\hearth.wasm without-init-call network-config testnet sign-with-keychain send
+near contract call-function as-read-only hearthmarket.testnet get_version json-args '{}' network-config testnet now
+cd ..\..
+# put OWNER_PRIVATE_KEY back in .env for this one step, then:
+npm run setup:testnet -- --operator-only --dry-run
+npm run setup:testnet -- --operator-only
+# remove OWNER_PRIVATE_KEY from .env again
+```
+
+`get_version` must print `"4"`. The script writes a new `ORACLE_KEY` into `.env` (not printed). **Copy it to Railway** (Variables → `ORACLE_KEY`) and redeploy: the old operator key is deleted, so relays fail until the server has the new one. The server log then says `contract hearthmarket.testnet version 4`. Until version 4 is live, requests still work in the game; the gold reaches the chain with the daily `reconcile`.
+
 ## Google sign-in (optional, recommended for the demo)
 
 1. https://console.cloud.google.com → create a project (e.g. "Hearthmarket").

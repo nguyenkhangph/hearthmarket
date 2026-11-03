@@ -36,6 +36,8 @@ type Dash = {
   };
   redTeam: { runs: number; blocked: number; bySigner: number; byContract: number; onChain: number; last?: { attack: string; npc: string; layer?: string; hash?: string; at: number } };
   feed: { t: number; kind: string; text: string; tx?: string }[];
+  traders?: { name: string; worth: number; gold: number; goods: number; badges: number; guild?: string; account?: string }[];
+  redTeamers?: { name: string; runs: number; blocked: number; onChain: number }[];
   deals: { day: number; buyer: string; seller: string; item: string; status: string; price?: number; maxQty: number; used: number; by: string; guard: string[]; rounds: { who: string; say: string; price?: number; accept?: boolean }[] }[];
 };
 
@@ -160,6 +162,18 @@ function render(d: Dash) {
     <td>${e.ok ? '<span class="up">ok</span>' : `<span class="down">refused</span> <span class="muted small">${esc(e.reason ?? '')}</span>`}</td>
     <td class="mono">${txLink(e.hash)}</td></tr>`).join('') || '<tr><td class="muted small">No calls since the server started. The chain sleeps while nobody plays: open the village to wake it.</td></tr>'}</tbody></table>`
     : '<p class="muted">This server runs without a chain (CHAIN=mock).</p>'}
+</section>
+
+<section class="card">
+  <h2>Top traders <span class="muted small">players by net worth</span></h2>
+  ${(d.traders ?? []).length ? `<table><tbody>${d.traders!.map((t, i) => `<tr>
+    <td class="rank">${i + 1}</td>
+    <td><b>${esc(t.name)}</b>${t.badges ? ` <span class="tag">★${t.badges}</span>` : ''}${t.guild ? `<div class="muted small">${esc(t.guild)}</div>` : ''}${t.account ? `<div>${acct(t.account, `${t.account.slice(0, 6)}…${t.account.slice(-4)}`)}</div>` : ''}</td>
+    <td class="mono gold" style="text-align:right">${gold(t.worth, 0)}<div class="muted small">${gold(t.gold, 0)} gold + ${gold(t.goods, 0)} goods</div></td></tr>`).join('')}</tbody></table>`
+    : '<p class="muted small">No players yet. Sign in and trade to get on the board.</p>'}
+  <h2>Red team board <span class="muted small">attacks tried by players</span></h2>
+  ${(d.redTeamers ?? []).length ? (d.redTeamers ?? []).map((r) => `<div class="kv small"><span><b>${esc(r.name)}</b> <span class="tag red">Red Teamer</span></span><span class="mono">${r.blocked}/${r.runs} blocked${r.onChain ? ` · ${r.onChain} on chain` : ''}</span></div>`).join('')
+    : '<p class="muted small">Nobody has attacked yet: open an NPC in the game → Red team.</p>'}
 </section>
 
 <section class="card">

@@ -14,7 +14,7 @@ import { checkDeal, describeDeal, DEAL_BAND, DEAL_MAX_QTY, DEAL_MAX_ROUNDS, type
 import { applyWorldDay, initialWorld, SyntheticWorld, type WorldDay } from './world.ts';
 import type {
   Action, ActionResult, Actor, DailyStats, DiaryEntry, FeedEvent, FeedKind, Guild, Inventory, NpcState,
-  Order, Player, Stall, VillageState,
+  NpcRequest, Order, Player, Stall, VillageState,
 } from './types.ts';
 
 /** Current game contract (see setContractAccount in defs.ts). */
@@ -250,6 +250,51 @@ export class Village {
     this.s.orders = this.s.orders.filter((o) => o.status === 'open' || day - o.deadlineDay < 3);
     this.settleInvestments();
     if (day > 1 && (day - 1) % RULES.seasonDays === 0) this.closeSeason();
+    this.postRequests();
+  }
+
+  // ---------------------------------------------------------------- NPC requests (daily quests)
+  /**
+   * Each morning two NPCs ask players for goods they need: the baker wants wheat, the
+   * smith ore or timber, the others bread for the table. Bad weather where that good is
+   * grown makes it urgent. The NPC pays a premium from its own gold; the quest faucet adds
+   * a small bonus. The first player to bring the goods gets it.
+   */
+  private postRequests() {
+    const wants: { npc: NpcId; item: ItemId; qty: [number, number]; why: string }[] = [
+      { npc: 'chloe', item: 'wheat', qty: [4, 6], why: "for tomorrow's bake" },
+      { npc: 'theo', item: 'ore', qty: [2, 4], why: 'for the forge' },
+      { npc: 'theo', item: 'timber', qty: [2, 3], why: 'for tool handles' },
+      { npc: 'mike', item: 'bread', qty: [2, 3], why: 'for the mine crew' },
+      { npc: 'jack', item: 'bread', qty: [2, 3], why: 'for a long day in the woods' },
+      { npc: 'buba', item: 'bread', qty: [2, 3], why: 'for the harvest hands' },
+    ];
+    const picks: typeof wants = [];
+    const pool = [...wants];
+    while (picks.length < RULES.requestsPerDay && pool.length) {
+      const w = pool.splice(Math.floor(this.rng.next() * pool.length), 1)[0];
+      if (!picks.some((x) => x.npc === w.npc)) picks.push(w);
+    }
+    const keep = (this.s.requests ?? []).filter((r) => r.by && this.day - r.day < 2);
+    this.s.requests = [...keep];
+    for (const w of picks) {
+      const n = this.s.npcs[w.npc];
+      const qty = w.qty[0] + Math.floor(this.rng.next() * (w.qty[1] - w.qty[0] + 1));
+      const price = Math.round(midPrice(w.item, this.s.market.stock[w.item]) * RULES.requestPremiumBps / 10_000);
+      if (n.gold < price * qty + g(10)) continue;
+      const region = this.s.world.regions.find((r) => r.item === w.item && r.severity > 0.25);
+      const text = region
+        ? `Bring ${qty} ${w.item} before the ${region.headline.toLowerCase()} in ${region.name} drives the price up`
+        : `Bring ${qty} ${w.item} ${w.why}`;
+      const r: NpcRequest = { id: this.s.nextId++, npc: w.npc, item: w.item, qty, price, bonus: RULES.requestBonus, day: this.day, text };
+      this.s.requests.push(r);
+      this.feed('quest', `${NPC_DEFS[w.npc].name} asks: "${text}" · pays ${fmt(price)} each + ${fmt(r.bonus, 0)} bonus`, w.npc);
+    }
+  }
+
+  /** Open requests a player can still fill today. */
+  openRequests(): NpcRequest[] {
+    return (this.s.requests ?? []).filter((r) => !r.by && r.day === this.day);
   }
 
   // ---------------------------------------------------------------- npc spending (guarded)
@@ -649,13 +694,52 @@ export class Village {
       const sellerId = this.producerOf(o.item);
       if (!sellerId) continue;
       const n = this.s.npcs[sellerId];
-      const k = Math.min(o.qty - o.filled, n.stock[o.item]);
-      if (k <= 0) continue;
+      const left = o.qty - o.filled;
+      const k = Math.min(left, n.stock[o.item]);
       const bid = bidPrice(o.item, this.s.market.stock[o.item]);
       const want = Math.max(Math.round(bid * 1.02), midPrice(o.item, this.s.market.stock[o.item]), Math.round(this.unitInputCost(o.item) * 1.08));
-      if (want > o.maxPrice) continue;
-      this.fillOne(o, sellerId, k, want);
+      // swarm: for raw goods Bruno bids too, importing from the world market; the cheaper ask wins
+      const bruno = this.brunoAsk(o.item, left);
+      const local = k > 0 && want <= o.maxPrice;
+      if (bruno && bruno.ask <= o.maxPrice && (!local || bruno.ask < want)) {
+        const human = this.isHuman(o.by);
+        if (human) {
+          this.feed('order', `Auction for ${this.ownerName(o.by)}'s ${left} ${o.item}: ${NPC_DEFS[sellerId].name} asks ${k > 0 ? fmt(want) : '(out of stock)'}, Bruno asks ${fmt(bruno.ask)} landed from the world · Bruno wins`, 'bruno');
+        }
+        if (this.brunoImportFor(o, left, bruno.landed, bruno.ask)) continue;
+      } else if (local && bruno && bruno.ask <= o.maxPrice && this.isHuman(o.by)) {
+        this.feed('order', `Auction for ${this.ownerName(o.by)}'s ${left} ${o.item}: ${NPC_DEFS[sellerId].name} asks ${fmt(want)}, Bruno asks ${fmt(bruno.ask)} · ${NPC_DEFS[sellerId].name} wins`, sellerId);
+      }
+      if (local) this.fillOne(o, sellerId, k, want);
     }
+  }
+
+  private isHuman(by: Order['by']) {
+    return by.kind === 'player' ? !this.s.players[by.id]?.bot : !this.s.guilds[by.id]?.ai;
+  }
+
+  /** Bruno's ask for raw goods he would import for an order: landed world price plus 5%. */
+  private brunoAsk(item: ItemId, qty: number): { ask: Gold; landed: Gold } | null {
+    const world = this.s.world.price[item];
+    if (!ITEM_DEFS[item].world || !world || this.producerOf(item) === 'bruno' || RECIPES[item]) return null;
+    const landed = Math.round(world * (1 + this.s.world.shippingBps / 10_000));
+    const b = this.s.npcs.bruno;
+    const cost = landed * qty;
+    if (b.gold < cost + g(20) || b.spentToday + cost > NPC_DEFS.bruno.dailyBudget) return null;
+    return { ask: Math.round(landed * 1.05), landed };
+  }
+
+  /** Bruno won the auction: import the goods (gold burned at the landed price), then fill the order. */
+  private brunoImportFor(o: Order, qty: number, landed: Gold, ask: Gold): boolean {
+    const b = this.s.npcs.bruno;
+    const cost = landed * qty;
+    b.gold -= cost;
+    b.spentToday += cost;
+    this.s.ledger.sinks.imports += cost;
+    b.stock[o.item] += qty;
+    const imp = this.tx(NPC_DEFS.bruno.account, 'world_import', { item: o.item, qty });
+    this.feed('import', `Bruno imports ${qty} ${o.item} for ${this.ownerName(o.by)}'s order · tx ${short(imp)}`, 'bruno', imp);
+    return !!this.fillOne(o, 'bruno', qty, ask, 'auction');
   }
 
   /** One NPC fills (part of) an order at a price; escrow pays the seller, the buyer gets the goods. */
@@ -1031,6 +1115,14 @@ export class Village {
     this.feed('quest', `${p.name} earned the badge "${b.title}"${tx ? ` · tx ${short(tx)}` : ''}`, undefined, tx);
   }
 
+  /** A badge earned outside the engine's own rules (the red team). Once per title. */
+  awardBadge(playerId: string, b: { kind: string; title: string; description: string }): boolean {
+    const p = this.s.players[playerId];
+    if (!p || p.bot || p.badges?.some((x) => x.title === b.title)) return false;
+    this.award(p, b);
+    return true;
+  }
+
   /** Server: patch a badge's placeholder hash once the mint lands. */
   patchTx(placeholder: string, hash: string) {
     const s = this.s;
@@ -1263,6 +1355,34 @@ export class Village {
         (a.yes ? v.yes : v.no).push(p.id);
         this.tallyVotes();
         return { ok: true };
+      }
+      case 'deliver_request': {
+        if (actor.kind !== 'player' || p.bot) return { ok: false, reason: 'only players deliver requests' };
+        const r = (this.s.requests ?? []).find((x) => x.id === a.requestId);
+        if (!r || r.day !== this.day) return { ok: false, reason: 'that request has expired' };
+        if (r.by) return { ok: false, reason: `${this.s.players[r.by]?.name ?? 'someone'} already delivered it` };
+        if (p.stock[r.item] < r.qty) return { ok: false, reason: `you need ${r.qty} ${r.item} (you have ${p.stock[r.item]})` };
+        const n = this.s.npcs[r.npc];
+        const pay = r.price * r.qty;
+        if (n.gold < pay) return { ok: false, reason: `${NPC_DEFS[r.npc].name} cannot pay right now` };
+        if (n.spentToday + pay > NPC_DEFS[r.npc].dailyBudget) return { ok: false, reason: `${NPC_DEFS[r.npc].name} is over the daily budget` };
+        p.stock[r.item] -= r.qty;
+        n.stock[r.item] += r.qty;
+        n.gold -= pay;
+        n.spentToday += pay;
+        p.gold += pay + r.bonus;
+        this.s.ledger.faucets.quests += r.bonus;
+        r.by = p.id;
+        const tx = this.tx(signer, 'deliver_request', {
+          request_id: r.id, npc: NPC_DEFS[r.npc].account, item: r.item, qty: r.qty, price: r.price, bonus: r.bonus,
+        });
+        r.tx = tx;
+        this.feed('quest', `${p.name} brought ${NPC_DEFS[r.npc].name} ${r.qty} ${r.item} · +${fmt(pay + r.bonus)} gold`, r.npc, tx);
+        const title = `Friend of ${NPC_DEFS[r.npc].name}`;
+        if (!p.badges?.some((b) => b.title === title)) {
+          this.award(p, { kind: 'request', title, description: `Brought ${NPC_DEFS[r.npc].name} the ${r.item} they asked for in Hearthmarket` });
+        }
+        return { ok: true, tx, info: `delivered ${r.qty} ${r.item} for ${fmt(pay)} + ${fmt(r.bonus, 0)} bonus` };
       }
       default:
         return { ok: false, reason: `players cannot call ${a.type}` };

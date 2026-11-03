@@ -111,6 +111,8 @@ const STORAGE_NEAR_PER_BYTE = 1e-5;
 
 export interface BalanceReader {
   balance(account: string): Promise<number>;
+  /** read-only contract call */
+  view<T = unknown>(contract: string, method: string, args?: Record<string, unknown>): Promise<T | undefined>;
 }
 
 /** Adds a balance reader (spendable NEAR = balance minus storage) to a NearChain. */
@@ -120,6 +122,9 @@ export function withBalances(chain: NearChain): NearChain & BalanceReader {
     async balance(accountId: string) {
       const v = await provider.viewAccount({ accountId });
       return Number(v.amount) / 1e24 - v.storage_usage * STORAGE_NEAR_PER_BYTE;
+    },
+    async view<T>(contractId: string, method: string, args: Record<string, unknown> = {}) {
+      return (await provider.callFunction({ contractId, method, args })) as T | undefined;
     },
   });
 }

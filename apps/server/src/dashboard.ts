@@ -9,7 +9,12 @@ export interface RedTeamStats {
   byContract: number;
   onChain: number;
   last?: { attack: string; npc: NpcId; layer?: string; hash?: string; at: number };
+  /** per player (first name only) */
+  players?: Record<string, { name: string; runs: number; blocked: number; onChain: number }>;
 }
+
+/** Public boards show a first name only. */
+export const firstName = (name: string) => (name.trim().split(/\s+/)[0] || 'player').slice(0, 16);
 
 export interface DashboardExtras {
   online: number;
@@ -19,6 +24,8 @@ export interface DashboardExtras {
   mirror?: ChainMirror;
   redTeam: RedTeamStats;
   startedAt: number;
+  /** NEAR account of a signed-in player, for the trader board */
+  playerAccount?: (playerId: string) => string | null;
 }
 
 /**
@@ -90,7 +97,9 @@ export function dashboardView(v: Village, x: DashboardExtras) {
     onChain: x.mirror
       ? { stats: x.mirror.stats, byMethod: x.mirror.byMethod, events, balances: x.mirror.balances }
       : undefined,
-    redTeam: x.redTeam,
+    redTeam: { ...x.redTeam, players: undefined },
+    redTeamers: Object.values(x.redTeam.players ?? {}).sort((a, b) => b.blocked - a.blocked || b.runs - a.runs).slice(0, 8),
+    traders: traders(v, x.playerAccount),
     deals: (s.deals ?? []).slice(-6).reverse().map((d) => ({
       day: d.day, buyer: NPC_DEFS[d.buyer].name, seller: NPC_DEFS[d.seller].name, item: d.item, status: d.status,
       price: d.price, maxQty: d.maxQty, used: d.used, by: d.by, guard: d.guard,
@@ -101,3 +110,20 @@ export function dashboardView(v: Village, x: DashboardExtras) {
 }
 
 export type DashboardView = ReturnType<typeof dashboardView>;
+
+/** Human players ranked by net worth (gold + goods at the market mid). First name and account only. */
+function traders(v: Village, account?: (id: string) => string | null) {
+  const s = v.s;
+  const mid = Object.fromEntries(ITEMS.map((i) => [i, midPrice(i, s.market.stock[i])]));
+  return Object.values(s.players)
+    .filter((p) => !p.bot)
+    .map((p) => {
+      const goods = ITEMS.reduce((t, i) => t + p.stock[i] * mid[i], 0);
+      return {
+        name: firstName(p.name), worth: p.gold + goods, gold: p.gold, goods, badges: p.badges?.length ?? 0,
+        guild: p.guild ? s.guilds[p.guild]?.name : undefined, account: account?.(p.id) ?? undefined,
+      };
+    })
+    .sort((a, b) => b.worth - a.worth)
+    .slice(0, 10);
+}

@@ -3,6 +3,8 @@
  *
  *   npm run setup:testnet -- --dry-run     # show the plan, send nothing
  *   npm run setup:testnet                  # do it
+ *   npm run setup:testnet -- --operator-only   # only replace the operator key (after a contract
+ *                                              # upgrade added an operator method)
  *
  * Needs in .env:
  *   HEARTH_CONTRACT=your-name.testnet            (the deployed contract account)
@@ -35,6 +37,7 @@ import { NPCS, NPC_DEFS, NPC_KEY_METHODS, OPERATOR_METHODS, RULES, g, setContrac
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = join(root, '.env');
 const dry = process.argv.includes('--dry-run');
+const operatorOnly = process.argv.includes('--operator-only');
 
 const contract = process.env.HEARTH_CONTRACT ?? '';
 const ownerKey = (process.env.OWNER_PRIVATE_KEY ?? '') as KeyPairString;
@@ -122,11 +125,11 @@ try {
     fail(`${contract} has no initialised hearth contract. Deploy it and call new(...) first (docs/testnet.md).`);
   }
 }
-if (!['2', '3'].includes(version)) fail(`expected contract version 2 or 3, found "${version}". Rebuild and redeploy contracts/hearth.`);
+if (!['2', '3', '4'].includes(version)) fail(`expected contract version 2, 3 or 4, found "${version}". Rebuild and redeploy contracts/hearth.`);
 const [, oracle] = (await view<[string, string]>('get_roles', {})) ?? ['', ''];
 if (oracle !== contract) console.log(`! the contract's oracle is ${oracle}; the operator key below goes on ${contract}. Relays will fail unless they match.\n`);
 
-for (const id of NPCS) {
+for (const id of operatorOnly ? [] : NPCS) {
   const def = NPC_DEFS[id];
   const accountId = def.account;
   console.log(`${def.name} (${accountId})`);
@@ -186,5 +189,5 @@ for (const [k, v] of Object.entries(env)) {
   text = new RegExp(`^${k}=.*$`, 'm').test(text) ? text.replace(new RegExp(`^${k}=.*$`, 'm'), line) : `${text.trimEnd()}\n${line}\n`;
 }
 writeFileSync(envPath, text);
-console.log(`\n✓ Done. New function-call keys for 6 NPCs and the operator were written to .env (not printed).`);
+console.log(`\n✓ Done. New function-call keys for ${operatorOnly ? 'the operator' : '6 NPCs and the operator'} were written to .env (not printed).`);
 console.log('  Remove OWNER_PRIVATE_KEY from .env now, then `npm run dev:server`.\n');

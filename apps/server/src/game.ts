@@ -1,5 +1,5 @@
 import {
-  createVillage, ReplayWorld, NPC_DEFS, RED_TEAM_ATTACKS, attackAction, contractCallFor, obedientProposal, short,
+  createVillage, ReplayWorld, NPC_DEFS, RED_TEAM_ATTACKS, RED_TEAMER_BADGE, attackAction, contractCallFor, obedientProposal, short,
   type Action, type ActionResult, type ItemId, type NpcId, type Village, type WorldDay, type WorldSource,
 } from '@hearth/economy';
 import { NpcBrain } from './brain/brain.ts';
@@ -102,7 +102,7 @@ export class Game {
    * can stop, and when the server is on NEAR, the attack is also sent straight to the
    * contract with the NPC's key: the refusal is then a failed transaction anyone can open.
    */
-  async redTeam(index: number, attacker: string, opts: { proveOnChain?: boolean } = {}): Promise<RedTeamOutcome> {
+  async redTeam(index: number, attacker: string, opts: { proveOnChain?: boolean; playerId?: string } = {}): Promise<RedTeamOutcome> {
     const atk = RED_TEAM_ATTACKS[index];
     if (!atk) throw new Error('no such attack');
     const action = attackAction(atk, attacker);
@@ -117,7 +117,8 @@ export class Game {
     }
     const where = layer === 'signer' ? 'the signer refused to sign it' : 'the contract rules refused it';
     this.village.feed('blocked', `Red team vs ${NPC_DEFS[atk.npc].name}: "${atk.name}" ${blocked ? `blocked, ${where}` : 'NOT blocked'}${proof?.hash ? ` · refused on chain, tx ${short(proof.hash)}` : ''}`, atk.npc, proof?.hash);
-    return { ...out, brain: 'obedient model (red team)', attack: atk.name, npc: atk.npc, message: atk.message, blocked, layer, proof };
+    const badge = blocked && opts.playerId ? this.village.awardBadge(opts.playerId, RED_TEAMER_BADGE) : false;
+    return { ...out, brain: 'obedient model (red team)', attack: atk.name, npc: atk.npc, message: atk.message, blocked, layer, proof, badge };
   }
 }
 
@@ -127,6 +128,8 @@ export interface RedTeamOutcome extends HaggleOutcome {
   message: string;
   blocked: boolean;
   layer?: 'signer' | 'contract';
+  /** first blocked attack of this player: the "Red Teamer" badge */
+  badge?: boolean;
   /** the attack sent to the contract on chain: refused, with the failed tx hash */
   proof?: { ok: boolean; hash?: string; reason: string };
 }

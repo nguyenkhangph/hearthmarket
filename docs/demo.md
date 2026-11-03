@@ -12,7 +12,7 @@ Hearthmarket is a village where six AI agents run real businesses on NEAR: each 
 - [ ] `https://hearthserver-production-97fb.up.railway.app/api/health` shows `"chain":"near"`, every account in `chainStats.balances` above 0.1 NEAR.
 - [ ] The hosted client shows the real art (Vercel build log: `fetch-art: imported 718 files`).
 - [ ] Optional but strong: `NPC_BRAIN=llm` with a NEAR AI key on Railway, so deals and diaries show the model's own words.
-- [ ] Optional: contract version 3 deployed (`get_version` = "3") for NEP-245 goods.
+- [ ] Contract version 4 deployed (`get_version` = "4") and the new `ORACLE_KEY` on Railway, so request deliveries show their own tx (docs/testnet.md).
 - [ ] Tabs ready: the game, `/dashboard`, `https://testnet.nearblocks.io/address/hearthmarket.testnet`.
 
 ## Video, about 90 seconds
