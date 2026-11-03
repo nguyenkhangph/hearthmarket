@@ -137,6 +137,7 @@ export const RULES = {
   // investing
   investShareBps: 2500, // NPC pays 25% of its daily profit to investors
   investDays: 7,
+  investKeepGold: g(40), // an NPC repays investors only down to this much working capital
 
   // players
   playerStartGold: g(50),
@@ -153,6 +154,8 @@ export const RULES = {
   // adventurers buy swords from the world side (a faucet)
   adventurerDemand: [0, 2] as [number, number],
   adventurerMaxPrice: g(22),
+  // each adventurer pays Bruno for a night at the inn (outside gold, counted with adventurers)
+  innLodging: g(2.5),
 
   // upkeep: every NPC pays 1 gold a day plus 3% of its balance above 120 gold (burned)
   upkeepFlat: g(1),
