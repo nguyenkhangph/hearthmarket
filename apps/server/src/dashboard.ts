@@ -95,7 +95,7 @@ export function dashboardView(v: Village, x: DashboardExtras) {
     guilds: Object.values(s.guilds).map((g) => ({ name: g.name, members: g.members.length, fund: g.fund, ai: !!g.ai })).sort((p, q) => q.fund - p.fund),
     orders: { open: s.orders.filter((o) => o.status === 'open').length, filled: s.orders.filter((o) => o.status === 'filled').length },
     onChain: x.mirror
-      ? { stats: x.mirror.stats, byMethod: x.mirror.byMethod, events, balances: x.mirror.balances }
+      ? { stats: x.mirror.stats, byMethod: x.mirror.byMethod, events, proofs: [...x.mirror.proofs].reverse(), balances: x.mirror.balances }
       : undefined,
     redTeam: { ...x.redTeam, players: undefined },
     redTeamers: Object.values(x.redTeam.players ?? {}).sort((a, b) => b.blocked - a.blocked || b.runs - a.runs).slice(0, 8),
