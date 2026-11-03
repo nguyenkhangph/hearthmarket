@@ -73,7 +73,7 @@ nav a.navlink { display: inline-flex; align-items: center; padding: 6px 12px; co
 nav a.navlink:hover { color: var(--text); }
 main { flex: 1; display: grid; grid-template-columns: 1fr 330px; min-height: 0; }
 #stage { position: relative; min-height: 0; overflow: hidden; background: #1b1e2b; }
-#game { position: absolute; inset: 0; }
+#game { position: absolute; inset: 0; overflow: hidden; }
 #game canvas { image-rendering: pixelated; }
 #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; z-index: 2; }
 #side { background: var(--panel); border-left: 1px solid var(--line); padding: 12px; display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow: hidden; }

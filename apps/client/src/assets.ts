@@ -31,7 +31,8 @@ export const IMAGES: Record<string, string> = {
   stoneHouse: 'Buildings/Buildings/Houses/Stone/House_3_Stone_Base_Blue.png',
   windmill: 'Buildings/Buildings/Unique_Buildings/Windmill/Windmill.png',
   silo: 'Buildings/Buildings/Unique_Buildings/Silo/Silo.png',
-  cave: 'Tiles/Cliff/Cave_Entrance.png',
+  cliff: 'Tiles/Cliff/Stone_Cliff_1_Tile.png', // cut into a 9-slice rock face for the mine
+  mineDoor: 'Tiles/Cliff/Stone_Cliff_1_Cave_Entrance.png',
   well: 'Outdoor decoration/Well.png',
   bridge: 'Tiles/Bridge/Bridge_Wood_1.png',
   hay: 'Outdoor decoration/Hay_Bales.png',

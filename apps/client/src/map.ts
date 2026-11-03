@@ -20,7 +20,7 @@ export function buildGround(): Ground[][] {
   rect(17, 19, 18, 21, 'p'); // to Jack
   rect(29, 19, 30, 21, 'p'); // to stone house
   rect(10, 19, 11, 21, 'p'); // to farm
-  rect(43, 12, 45, 15, 'p'); // to mine
+  rect(43, 11, 45, 15, 'p'); // to mine (runs under the cliff foot to the door)
   rect(8, 22, 14, 29, 'f'); // Buba's field
   rect(37, 0, 38, 31, 'w'); // river
   return m;
@@ -58,7 +58,8 @@ export const PROPS: Prop[] = [
   { kind: 'image', key: 'stoneHouse', x: 26, y: 22 },
   { kind: 'image', key: 'windmill', x: 0, y: 22 },
   { kind: 'image', key: 'silo', x: 5, y: 26 },
-  { kind: 'image', key: 'cave', x: 43, y: 9 },
+  { kind: 'image', key: 'mineCliff', x: 41, y: 6 }, // built in the scene from the cliff 9-slice
+  { kind: 'image', key: 'mineDoor', x: 43, y: 9, bias: 2 },
   { kind: 'image', key: 'well', x: 27, y: 18, bias: 4 },
   { kind: 'image', key: 'hay', x: 9, y: 21 },
   // four market stalls, one per guild slot
@@ -67,11 +68,11 @@ export const PROPS: Prop[] = [
   { kind: 'frame', key: 'stalls', frame: 2, x: 26, y: 12 },
   { kind: 'frame', key: 'stalls', frame: 3, x: 29, y: 12 },
   // mine
-  { kind: 'frame', key: 'ores', frame: 1, x: 41, y: 10 },
-  { kind: 'frame', key: 'ores', frame: 2, x: 46, y: 9 },
-  { kind: 'frame', key: 'ores', frame: 4, x: 47, y: 11 },
-  { kind: 'frame', key: 'ores', frame: 0, x: 41, y: 12 },
-  { kind: 'frame', key: 'carts', frame: 1, x: 45, y: 10 },
+  { kind: 'frame', key: 'ores', frame: 1, x: 40, y: 12 },
+  { kind: 'frame', key: 'ores', frame: 0, x: 41, y: 13 },
+  { kind: 'frame', key: 'ores', frame: 2, x: 48, y: 12 },
+  { kind: 'frame', key: 'ores', frame: 4, x: 48, y: 14 },
+  { kind: 'frame', key: 'carts', frame: 1, x: 46, y: 12 },
   // barrels and crates
   { kind: 'frame', key: 'barrels', frame: 0, x: 21, y: 9 },
   { kind: 'frame', key: 'barrels', frame: 1, x: 14, y: 9 },
