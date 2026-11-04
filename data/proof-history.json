@@ -2,7 +2,7 @@
   "note": "Real NEAR testnet transactions from the hosted game (hearthmarket.testnet), kept so the dashboard's proof list survives server restarts. Times are block times in ms since epoch.",
   "contract": "hearthmarket.testnet",
   "events": [
-    { "at": 1793722461305, "signer": "theo.hearthmarket.testnet", "method": "hire", "ok": false, "hash": "G9Sq9G1D6YD46oj5S4r5nEX91CiNvkuw125LKtWBLk7y", "reason": "not enough goods", "redTeam": true },
+    { "at": 1793722461305, "signer": "theo.hearthmarket.testnet", "method": "hire", "ok": false, "hash": "G9Sq9G1D6YD46oj5S4r5nEX91CiNvkuw125LKtWBLk7y", "reason": "not enough goods", "redTeam": true, "player": "Khang", "attack": "hire goods the seller does not have" },
     { "at": 1793725084062, "signer": "hearthmarket.testnet", "method": "relay_register_player", "ok": true, "hash": "Dh1NENch4X85UGco2N2c8ay1Emr7EG6rwXLou6R29Rng" },
     { "at": 1793725090429, "signer": "hearthmarket.testnet", "method": "relay_market_buy", "ok": true, "hash": "J5pMRrJWjAJZBQH9RtokTWb4TvJ25XzvXDNrE4UgZLo9" },
     { "at": 1793725092355, "signer": "hearthmarket.testnet", "method": "relay_market_buy", "ok": true, "hash": "7RFsWgmqHFfq4z6WyuB2XX3sXocnnaqmQNpzbjnza25g" },
@@ -10,6 +10,6 @@
     { "at": 1793725095402, "signer": "hearthmarket.testnet", "method": "relay_deliver_request", "ok": true, "hash": "7BupYz59DmgCng5c919wSvzzQB3AJBLU6DHX1KKvbchf" },
     { "at": 1793725097221, "signer": "hearthmarket.testnet", "method": "mint_badge", "ok": true, "hash": "G7q4dBcPJJ97TcqcPDuijy5WeuzRscD3twki8uR33ADX" },
     { "at": 1793725147259, "signer": "hearthmarket.testnet", "method": "mint_badge", "ok": true, "hash": "6p6VTQRPC77SiumB8FzEX1grD6pNTQzb9xWXZ5kkdTWU" },
-    { "at": 1793725160265, "signer": "theo.hearthmarket.testnet", "method": "hire", "ok": false, "hash": "Fy76rLeuSK3RTDuFfrJHz1XWY7A8tddsfsYz239cLPoG", "reason": "not enough goods", "redTeam": true }
+    { "at": 1793725160265, "signer": "theo.hearthmarket.testnet", "method": "hire", "ok": false, "hash": "Fy76rLeuSK3RTDuFfrJHz1XWY7A8tddsfsYz239cLPoG", "reason": "not enough goods", "redTeam": true, "player": "Khang", "attack": "hire goods the seller does not have" }
   ]
 }

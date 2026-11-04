@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import type { ChainEvent } from './chain/mirror.ts';
 import type { RedTeamStats } from './dashboard.ts';
+import type { NpcId } from '@hearth/economy';
 
 /**
  * What the public dashboard must not lose on a restart: the red-team score and board, and the
@@ -42,4 +43,22 @@ export function saver(file: string, get: () => RuntimeState, ms = 5000, log: (l:
     }
   };
   return { touch: () => { due ??= setTimeout(write, ms); }, flush: write };
+}
+
+/**
+ * No saved score (first start, or a deploy without a volume): rebuild it from the red-team
+ * refusals in the proof history. Each one is an attack the contract refused on chain; attacks
+ * the signer stopped never reach the chain, so they are not counted here.
+ */
+export function redTeamFromHistory(history: (ChainEvent & { player?: string; attack?: string })[]): RedTeamStats {
+  const red = history.filter((e) => e.redTeam && !e.ok && e.hash).sort((a, b) => a.at - b.at);
+  const stats: RedTeamStats = { runs: red.length, blocked: red.length, bySigner: 0, byContract: red.length, onChain: red.length };
+  const last = red.at(-1);
+  if (last) stats.last = { attack: last.attack ?? last.method, npc: last.signer.split('.')[0] as NpcId, layer: 'contract', hash: last.hash, at: last.at };
+  for (const e of red) {
+    if (!e.player) continue;
+    const p = ((stats.players ??= {})[`history:${e.player}`] ??= { name: e.player, runs: 0, blocked: 0, onChain: 0 });
+    p.runs++; p.blocked++; p.onChain++;
+  }
+  return stats;
 }

@@ -19,7 +19,7 @@ import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
 import { fetchIntentsReading, type IntentsReading } from './world/intents.ts';
 import { dashboardView, firstName, type RedTeamStats } from './dashboard.ts';
-import { loadState, mergeProofs, saver } from './persist.ts';
+import { loadState, mergeProofs, redTeamFromHistory, saver } from './persist.ts';
 import { authenticate, claimKey, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
 
 setContractAccount(config.near.contract);
@@ -191,13 +191,13 @@ const proofs: number[] = [];
 // survives restarts: STATE_FILE (default data/runtime/state.json; on Railway point it at a volume)
 const stateFile = process.env.STATE_FILE || join(root, 'data/runtime/state.json');
 const saved = loadState(stateFile);
-const redTeam: RedTeamStats = saved.redTeam ?? { runs: 0, blocked: 0, bySigner: 0, byContract: 0, onChain: 0 };
+let history: Parameters<typeof redTeamFromHistory>[0] = [];
+try {
+  history = (JSON.parse(readFileSync(join(root, 'data/proof-history.json'), 'utf8')) as { events: typeof history }).events;
+} catch { /* no history file */ }
+const redTeam: RedTeamStats = saved.redTeam ?? redTeamFromHistory(history);
 const store = saver(stateFile, () => ({ redTeam, proofs: mirror ? [...mirror.proofs] : [] }), 5000, log);
 if (mirror) {
-  let history: Parameters<typeof mergeProofs>[0] = [];
-  try {
-    history = (JSON.parse(readFileSync(join(root, 'data/proof-history.json'), 'utf8')) as { events: typeof history }).events;
-  } catch { /* no history file */ }
   mirror.proofs.push(...mergeProofs(history, saved.proofs));
   mirror.onProof = () => store.touch();
   log(`dashboard state: ${mirror.proofs.length} proofs, red team ${redTeam.blocked}/${redTeam.runs} (${stateFile})`);

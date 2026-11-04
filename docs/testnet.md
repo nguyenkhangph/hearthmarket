@@ -287,3 +287,13 @@ The token only reads that one private repo; it lives in Vercel, never in code. C
 | `failed:order id taken` / `no such order` | An order placed before a server restart; harmless |
 | `Sign-in refused: token is for another app` | `VITE_GOOGLE_CLIENT_ID` differs between client and server, or a stale tab: reload |
 | Google button missing | `VITE_GOOGLE_CLIENT_ID` empty, or `http://localhost:5173` not in the authorized JavaScript origins |
+
+## Keep the dashboard's numbers across deploys (Railway)
+
+The red-team score, the Red Teamer board and the proof list are saved in `STATE_FILE`. Railway wipes the container on every deploy, so give the file a volume:
+
+1. In the Railway project: **+ Create → Volume**, attach it to the game server service, mount path `/data`.
+2. Service → **Variables**: `STATE_FILE=/data/runtime/state.json`.
+3. Deploy. The start log prints `dashboard state: N proofs, red team X/Y (/data/runtime/state.json)`.
+
+Without a volume the server still rebuilds the score from the refusals listed in `data/proof-history.json`.
