@@ -105,6 +105,8 @@ export class ChainMirror {
   readonly byMethod: Record<string, { ok: number; failed: number }> = {};
   /** relays, badges and red-team refusals, newest last (dashboard "proof" list) */
   readonly proofs: ChainEvent[] = [];
+  /** called after a proof is added (the server saves the list) */
+  onProof: () => void = () => {};
   /** the last calls that reached the chain, newest last (dashboard) */
   readonly events: ChainEvent[] = [];
   /** called with (placeholder, final hash or `failed:...`) */
@@ -256,6 +258,7 @@ export class ChainMirror {
     if (e.hash && (e.redTeam || PROOF_METHODS.has(e.method))) {
       this.proofs.push(ev);
       if (this.proofs.length > 40) this.proofs.splice(0, this.proofs.length - 40);
+      this.onProof();
     }
   }
 
