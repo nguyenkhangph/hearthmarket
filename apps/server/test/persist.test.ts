@@ -23,3 +23,15 @@ describe('dashboard state across restarts', () => {
     for (const e of h.events) expect(e.hash).toMatch(/^[1-9A-HJ-NP-Za-km-z]{43,44}$/);
   });
 });
+
+describe('red-team score without a saved file', () => {
+  it('is rebuilt from the refusals in the committed proof history', async () => {
+    const { redTeamFromHistory } = await import('../src/persist.ts');
+    const h = JSON.parse(readFileSync(join(__dirname, '../../../data/proof-history.json'), 'utf8')) as { events: Parameters<typeof redTeamFromHistory>[0] };
+    const r = redTeamFromHistory(h.events);
+    expect(r.blocked).toBeGreaterThanOrEqual(2);
+    expect(r.byContract).toBe(r.blocked);
+    expect(Object.values(r.players ?? {})[0]).toMatchObject({ name: 'Khang' });
+    expect(r.last?.layer).toBe('contract');
+  });
+});

@@ -72,6 +72,8 @@ const RAW = new Set(['ore', 'timber', 'wheat']);
 /** NPC methods that spend goods or gold the chain may not have after a skipped call */
 const SPENDS_GOODS = new Set(['craft', 'market_sell', 'fill_order', 'world_trade', 'world_import']);
 
+class HeldBack extends Error {}
+
 const PROOF_METHODS = new Set(['relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order', 'relay_deliver_request', 'mint_badge']);
 
 const TGAS: Record<string, number> = { reconcile: 150, post_world_data: 30, relay_place_order: 30 };
@@ -170,8 +172,11 @@ export class ChainMirror {
   /** NPC accounts whose chain state no longer matches the game, until the next reconcile. */
   private drift = new Map<string, number>();
   private driftN = 0;
-  private markDrift(signer: string) {
+  /** last chain failure per NPC: calls queued before it may now find too few goods */
+  private failedAt = new Map<string, number>();
+  private markDrift(signer: string, failed = false) {
     this.drift.set(signer, ++this.driftN);
+    if (failed) this.failedAt.set(signer, this.driftN);
   }
 
   private isNpc(signer: string) {
@@ -497,10 +502,19 @@ export class ChainMirror {
     const placeholder = `pending${(this.pendingN++).toString().padStart(6, '0')}xx`;
     q.size++;
     this.queues.set(signer, q);
+    const queuedAt = this.driftN;
     const run = async () => {
       if (after.length) await Promise.all(after.map((p) => p.catch(() => {})));
       let last = '';
       for (const c of calls) {
+        // an earlier call of this NPC failed or was skipped after this one was queued: its goods
+        // on chain are short now, so hold this one back for the next reconcile instead of failing
+        const d = this.failedAt.get(c.signer) ?? 0;
+        const sellerD = c.method === 'hire' ? this.failedAt.get(String(c.args.seller)) ?? 0 : 0;
+        if ((SPENDS_GOODS.has(c.method) || c.method === 'hire') && Math.max(d, sellerD) > queuedAt) {
+          this.stats.unsynced++;
+          throw new HeldBack(`${c.method} held back until the next reconcile`);
+        }
         this.stats.sent++;
         // the signer half of the guard: a key only ever signs the methods on that key
         const npc = NPCS.find((id) => NPC_DEFS[id].account === c.signer);
@@ -529,8 +543,12 @@ export class ChainMirror {
           this.settle(placeholder, hash);
         },
         (e: Error) => {
+          if (e instanceof HeldBack) {
+            this.settle(placeholder, `failed:${e.message}`);
+            return;
+          }
           this.stats.failed++;
-          if (this.isNpc(signer)) this.markDrift(signer);
+          if (this.isNpc(signer)) this.markDrift(signer, true);
           this.log(`chain FAIL ${signer} ${calls.map((c) => c.method).join('+')}: ${e.message}`);
           this.settle(placeholder, `failed:${e.message.replace(/^.*panicked: /, '').slice(0, 60)}`);
         },

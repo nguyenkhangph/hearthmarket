@@ -99,7 +99,7 @@ describe('chain mirror: queues', () => {
     m.onSettled = (p, h) => settled.push([p, h]);
     chain.failNext.set('hire', 'over the daily budget');
     const a = m.hook(NPC_DEFS.theo.account, 'hire', { seller: NPC_DEFS.mike.account, item: 'ore', qty: 3, price: 590 })!;
-    const b = m.hook(NPC_DEFS.theo.account, 'craft', { item: 'tools', crafts: 1 })!;
+    const b = m.hook(NPC_DEFS.theo.account, 'market_buy', { item: 'ore', qty: 1, max_price: 700 })!;
     await m.idle();
     expect(settled).toContainEqual([a, 'failed:over the daily budget']);
     expect(settled.find(([p]) => p === b)?.[1]).toMatch(/^Mock/);
@@ -286,5 +286,24 @@ describe('chain mirror: gas budget', () => {
     const b = await m.checkBalances(0.1);
     expect(b[NPC_DEFS.theo.account]).toBe(0.002);
     expect(lines.filter((l) => l.startsWith('LOW BALANCE'))).toEqual([expect.stringContaining(NPC_DEFS.theo.account)]);
+  });
+});
+
+describe('chain mirror: drift found while calls wait in the queue', () => {
+  it('holds back a queued craft when the NPC call before it failed', async () => {
+    const chain = new MockChain();
+    const call = chain.call.bind(chain);
+    chain.call = async (signer, contract, method, args) => {
+      if (method === 'market_buy') throw new Error('Smart contract panicked: price moved');
+      return call(signer, contract, method, args);
+    };
+    const m = new ChainMirror(chain, { contract: CONTRACT, operator: CONTRACT, playerAccount: () => null, maxPerMinute: 1000, maxQueue: 100 });
+    m.hook(NPC_DEFS.chloe.account, 'market_buy', { item: 'wheat', qty: 3, max_price: 300 });
+    const craft = m.hook(NPC_DEFS.chloe.account, 'craft', { item: 'bread', crafts: 3 });
+    expect(craft).toMatch(/^pending/);
+    await m.idle();
+    expect(chain.calls.some((c) => c.method === 'craft')).toBe(false);
+    expect(m.stats.unsynced).toBe(1);
+    expect(m.stats.failed).toBe(1);
   });
 });
