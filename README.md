@@ -1,6 +1,6 @@
 # Hearthmarket
 
-A pixel-art village where six NPCs run their own businesses, each with its own NEAR account and key. While someone is playing or watching, their decisions come from a language model on NEAR AI Cloud; otherwise (and in guest mode) the same NPCs follow built-in rules (see *What uses AI, and what does not*). They they negotiate prices with each other, hire each other and fill player orders, and every deal is a transaction signed by the agent's own key, inside limits the agent cannot break. Real weather in five producing regions moves world prices, and the price of real (tokenized) gold, read from NEAR Intents, sets what village gold is worth. Players sign in with Google, never see a wallet, and can claim their NEAR account whenever they like.
+A pixel-art village where six NPCs run their own businesses, each with its own NEAR account and key. While someone is playing or watching, their decisions come from a language model on NEAR AI Cloud; otherwise (and in guest mode) the same NPCs follow built-in rules (see *What uses AI, and what does not*). They negotiate prices with each other, hire each other and fill player orders, and every deal is a transaction signed by the agent's own key, inside limits the agent cannot break. Real weather in five producing regions moves world prices, and the price of real (tokenized) gold, read from NEAR Intents, sets what village gold is worth. Players sign in with Google, never see a wallet, and can claim their NEAR account whenever they like.
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
@@ -19,12 +19,12 @@ The same question matters outside games. AI agents are starting to buy and sell 
 
 ## Play it now
 
-- **Game:** https://hearthmarket.vercel.app (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
-- **Live economy:** https://hearthmarket.vercel.app/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
+- **Game:** https://hearthmarket.space (mirror: https://hearthmarket.vercel.app) (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
+- **Live economy:** https://hearthmarket.space/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
 
 ## Try it in 3 minutes
 
-You need Node 22 or newer (the scripts use `--env-file-if-exists`), and for the contract Rust 1.93+ (see below). The Cute Fantasy RPG art pack is licensed and not redistributable, so it is not in this repo (see Credits). Without it the game draws simple stand-in art and everything else works the same; with it, import it once.
+You need Node 22 or newer (the scripts use `--env-file-if-exists`), and for the contract rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`, so rustup installs it). The Cute Fantasy RPG art pack is licensed and not redistributable, so it is not in this repo (see Credits). Without it the game draws simple stand-in art and everything else works the same; with it, import it once.
 
 ```sh
 npm install
@@ -58,7 +58,7 @@ With the server on NEAR testnet (`CHAIN=near`), step 4 goes further: pick *hire 
 | The player who ran it receives the soulbound **Red Teamer** badge (NEP-171) | [mint_badge 6p6VTQRP…](https://testnet.nearblocks.io/txns/6p6VTQRPC77SiumB8FzEX1grD6pNTQzb9xWXZ5kkdTWU) |
 | Daily NPC request: a Google player buys goods (relayed), delivers them, the NPC pays from its own gold, and the first delivery to that NPC mints a "Friend of …" badge | [relay_market_buy](https://testnet.nearblocks.io/txns/J5pMRrJWjAJZBQH9RtokTWb4TvJ25XzvXDNrE4UgZLo9) · [relay_deliver_request](https://testnet.nearblocks.io/txns/7BupYz59DmgCng5c919wSvzzQB3AJBLU6DHX1KKvbchf) · [mint_badge](https://testnet.nearblocks.io/txns/G7q4dBcPJJ97TcqcPDuijy5WeuzRscD3twki8uR33ADX) · earlier: [Friend of Jack](https://testnet.nearblocks.io/txns/C5G588z3iSCMwCzV1qQrz2dLdCwxJPAqh8GUpfCD7scX) |
 | NPC production (version 1, first deployment) | [jack produce](https://testnet.nearblocks.io/txns/2jWfs87vLGKrj7HE58mvgqiQBF4vQoFcPRVvnGnBDahF) |
-| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, a *Proof on NEAR testnet* list of player relays, badges and red-team refusals, red-team board, top traders) | [hearthmarket.vercel.app/dashboard](https://hearthmarket.vercel.app/dashboard), data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
+| **Live economy dashboard** (prices, money supply and flows, agents ranked by net worth, latest testnet calls, a *Proof on NEAR testnet* list of player relays, badges and red-team refusals, red-team board, top traders) | [hearthmarket.space/dashboard](https://hearthmarket.space/dashboard), data from `https://hearthserver-production-97fb.up.railway.app/api/dashboard` |
 | Hosted agent brains | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` (day plans, agent-to-agent deals, haggling); rules while nobody is online |
 | Hosted world money | NEAR Intents 1Click: tokenized gold XAUT, e.g. 3929.34 USD → world prices ×0.967 (3 Nov 2026, 02:22 UTC; refreshed every few minutes) |
 | Hosted game server (health check: day, chain stats, spendable NEAR per signing account) | https://hearthserver-production-97fb.up.railway.app/api/health |
@@ -73,9 +73,9 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 121 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 124 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
-npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.93+ (near-sdk 5.x)
+npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).

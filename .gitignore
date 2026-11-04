@@ -26,3 +26,4 @@ contracts/**/target/
 submission.json
 # full Open-Meteo payloads whose hashes the oracle posted
 data/world/posted/
+data/runtime/

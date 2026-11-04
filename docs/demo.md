@@ -37,7 +37,7 @@ Hearthmarket is a village where six AI agents run real businesses on NEAR: each 
 > 🎮 Google sign-in, no wallet; claim your NEAR account any time
 >
 > Built at #NEARHackathon @NEARProtocol
-> Play: https://hearthmarket.vercel.app · Live economy: https://hearthmarket.vercel.app/dashboard
+> Play: https://hearthmarket.space · Live economy: https://hearthmarket.space/dashboard
 > Code: https://github.com/nguyenkhangph/hearthmarket
 
 Attach the video. Optional tags: @NearLegion @NearBuilders.

@@ -19,6 +19,7 @@ import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
 import { OpenMeteoWorld, worldPost } from './world/openMeteo.ts';
 import { fetchIntentsReading, type IntentsReading } from './world/intents.ts';
 import { dashboardView, firstName, type RedTeamStats } from './dashboard.ts';
+import { loadState, mergeProofs, saver } from './persist.ts';
 import { authenticate, claimKey, GoogleVerifier, randomSecret, type HelloAuth, type Session } from './auth.ts';
 
 setContractAccount(config.near.contract);
@@ -187,7 +188,21 @@ const sessions = new Map<WebSocket, Session>();
 const lastAttack = new WeakMap<WebSocket, number>();
 /** times of on-chain red-team proofs in the last hour (each one costs a little gas) */
 const proofs: number[] = [];
-const redTeam: RedTeamStats = { runs: 0, blocked: 0, bySigner: 0, byContract: 0, onChain: 0 };
+// survives restarts: STATE_FILE (default data/runtime/state.json; on Railway point it at a volume)
+const stateFile = process.env.STATE_FILE || join(root, 'data/runtime/state.json');
+const saved = loadState(stateFile);
+const redTeam: RedTeamStats = saved.redTeam ?? { runs: 0, blocked: 0, bySigner: 0, byContract: 0, onChain: 0 };
+const store = saver(stateFile, () => ({ redTeam, proofs: mirror ? [...mirror.proofs] : [] }), 5000, log);
+if (mirror) {
+  let history: Parameters<typeof mergeProofs>[0] = [];
+  try {
+    history = (JSON.parse(readFileSync(join(root, 'data/proof-history.json'), 'utf8')) as { events: typeof history }).events;
+  } catch { /* no history file */ }
+  mirror.proofs.push(...mergeProofs(history, saved.proofs));
+  mirror.onProof = () => store.touch();
+  log(`dashboard state: ${mirror.proofs.length} proofs, red team ${redTeam.blocked}/${redTeam.runs} (${stateFile})`);
+}
+for (const sig of ['SIGTERM', 'SIGINT'] as const) process.once(sig, () => { store.flush(); process.exit(0); });
 const startedAt = Date.now();
 
 const http = createServer((req, res) => {
@@ -275,6 +290,7 @@ wss.on('connection', (ws) => {
         if (out.layer === 'contract') redTeam.byContract++;
         if (out.proof?.hash) redTeam.onChain++;
         redTeam.last = { attack: out.attack, npc: out.npc, layer: out.layer, hash: out.proof?.hash, at: now };
+        store.touch();
         const who = (redTeam.players ??= {})[session.playerId] ??= { name: firstName(session.name), runs: 0, blocked: 0, onChain: 0 };
         who.runs++;
         if (out.blocked) who.blocked++;

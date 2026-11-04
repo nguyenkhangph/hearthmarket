@@ -2,7 +2,7 @@
 name = "hearth"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.93"
+rust-version = "1.95"
 description = "Hearthmarket game contract: village market, NPC spending guard, orders, guilds, stalls, world oracle"
 license = "MIT"
 
