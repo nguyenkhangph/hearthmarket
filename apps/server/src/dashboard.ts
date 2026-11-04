@@ -98,7 +98,7 @@ export function dashboardView(v: Village, x: DashboardExtras) {
       ? { stats: x.mirror.stats, byMethod: x.mirror.byMethod, events, proofs: [...x.mirror.proofs].reverse(), balances: x.mirror.balances }
       : undefined,
     redTeam: { ...x.redTeam, players: undefined },
-    redTeamers: Object.values(x.redTeam.players ?? {}).sort((a, b) => b.blocked - a.blocked || b.runs - a.runs).slice(0, 8),
+    redTeamers: mergeByName(Object.values(x.redTeam.players ?? {})).sort((a, b) => b.blocked - a.blocked || b.runs - a.runs).slice(0, 8),
     traders: traders(v, x.playerAccount),
     deals: (s.deals ?? []).slice(-6).reverse().map((d) => ({
       day: d.day, buyer: NPC_DEFS[d.buyer].name, seller: NPC_DEFS[d.seller].name, item: d.item, status: d.status,
@@ -126,4 +126,15 @@ function traders(v: Village, account?: (id: string) => string | null) {
     })
     .sort((a, b) => b.worth - a.worth)
     .slice(0, 10);
+}
+
+/** One row per first name: the history and the live session may hold the same player twice. */
+function mergeByName(rows: { name: string; runs: number; blocked: number; onChain: number }[]) {
+  const m = new Map<string, { name: string; runs: number; blocked: number; onChain: number }>();
+  for (const r of rows) {
+    const t = m.get(r.name) ?? { name: r.name, runs: 0, blocked: 0, onChain: 0 };
+    t.runs += r.runs; t.blocked += r.blocked; t.onChain += r.onChain;
+    m.set(r.name, t);
+  }
+  return [...m.values()];
 }
