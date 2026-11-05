@@ -11,6 +11,11 @@ const artReady = detectArt();
 const params = new URLSearchParams(location.search);
 const serverUrl = params.get('server') ?? (import.meta.env.VITE_SERVER_URL as string | undefined);
 let game: Phaser.Game | null = null;
+/** the village that is running, if any (a guest can still sign in from the top bar) */
+let running: GameSource | null = null;
+/** the sign-in can be offered again only when this build talks to a game server with Google set up */
+let onlineReady = false;
+const RESUME = 'hm.resume';
 const contractEnv = import.meta.env.VITE_HEARTH_CONTRACT as string | undefined;
 if (contractEnv) setContractAccount(contractEnv);
 
@@ -59,7 +64,39 @@ const loginMsg = (text: string, bad = false) => {
   el.classList.toggle('bad', bad);
 };
 
+/**
+ * A guest who signs in moves to the online village. The page reloads into it (one clean
+ * game, no guest leftovers); the sign-in is handed over in sessionStorage for that one load.
+ */
+function signInFromGuest(auth: HelloAuth) {
+  try {
+    sessionStorage.setItem(RESUME, JSON.stringify(auth));
+  } catch {
+    loginMsg('This browser blocks session storage: reload the page and sign in from the start screen.', true);
+    return;
+  }
+  const url = new URL(location.href);
+  url.searchParams.delete('guest');
+  location.replace(url.toString());
+}
+
+/** The start screen again, as a "put it on chain" step for a guest. */
+function showSignIn() {
+  const el = document.getElementById('login')!;
+  el.classList.add('upgrade');
+  document.getElementById('login-title')!.textContent = 'Put your trades on NEAR';
+  document.getElementById('login-lead')!.textContent = 'Sign in with Google and a NEAR testnet account is made for you: no wallet, no seed phrase. Your gold, trades and badges then live on chain, and you join the shared online village with the other players.';
+  document.getElementById('guest')!.textContent = 'Keep playing as guest';
+  document.getElementById('login-foot')!.textContent = 'The guest village stays in this tab until you sign in.';
+  el.classList.remove('hidden');
+}
+
 async function boot(name: string, auth: HelloAuth | null) {
+  if (running) {
+    if (auth) signInFromGuest(auth);
+    else document.getElementById('login')!.classList.add('hidden');
+    return;
+  }
   let src: GameSource;
   if (serverUrl && auth) {
     const remote = new RemoteSource(serverUrl, auth);
@@ -79,9 +116,11 @@ async function boot(name: string, auth: HelloAuth | null) {
   }
   document.getElementById('login')!.classList.add('hidden');
   document.body.dataset.mode = src.mode;
+  running = src;
   await artReady;
-  const ui = new Ui(src, portrait, face);
-  game = startGame(document.getElementById('game')!, src, (id) => ui.open('npc', id));
+  const guest = src.mode === 'guest';
+  const ui = new Ui(src, portrait, face, { get signIn() { return guest && onlineReady ? showSignIn : undefined; } });
+  game = startGame(document.getElementById('game')!, src, { click: (id) => ui.open('npc', id), hover: () => ui.sawHover() });
   const speed = document.getElementById('speed') as HTMLSelectElement;
   speed.addEventListener('change', () => src.setSpeed(Number(speed.value)));
   const ff = document.getElementById('ffwd') as HTMLButtonElement;
@@ -143,6 +182,7 @@ async function setupLogin() {
       document.getElementById('online-note')!.textContent = cfg.chain === 'near'
         ? `Online village on NEAR testnet (${cfg.contract}). Your gold and badges sit under a NEAR account made for you; no wallet, no seed phrase.`
         : 'Online village (chain mirror off on this server).';
+      onlineReady = !!clientId || devLogin;
     } catch {
       loginMsg(`Game server ${serverUrl} is not answering. Guest mode still works.`, true);
     }
@@ -162,5 +202,17 @@ document.getElementById('email-form')!.addEventListener('submit', (e) => {
   if (!email) return;
   void boot(email.split('@')[0], { kind: 'dev', email, name: email.split('@')[0] });
 });
-void setupLogin();
-if (params.has('guest')) void boot('guest', null);
+const resume = (() => {
+  try {
+    const raw = sessionStorage.getItem(RESUME);
+    sessionStorage.removeItem(RESUME);
+    return raw ? (JSON.parse(raw) as HelloAuth) : null;
+  } catch {
+    return null;
+  }
+})();
+const login = setupLogin();
+if (resume && serverUrl) {
+  loginMsg('Signing in…');
+  void login.then(() => boot(resume.kind === 'dev' ? resume.email.split('@')[0] : 'player', resume));
+} else if (params.has('guest')) void login.then(() => boot('guest', null));

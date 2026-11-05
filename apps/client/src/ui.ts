@@ -5,7 +5,32 @@ import {
 import { icon } from './assets.ts';
 import type { GameSource } from './source.ts';
 
-type PanelId = 'market' | 'guild' | 'economy' | 'npc' | 'account' | null;
+type PanelId = 'market' | 'guild' | 'economy' | 'npc' | 'account' | 'proof' | null;
+
+/** What the page around the UI can do (main.ts): bring the sign-in back for a guest. */
+export interface UiHooks {
+  /** shows the sign-in screen again; undefined when this build has no online village */
+  signIn?: () => void;
+}
+
+/** A few real testnet transactions from the hosted village, shown to guests under "Prove on NEAR". */
+interface ProofEvent { at: number; signer: string; method: string; ok: boolean; hash: string; reason?: string; redTeam?: boolean; attack?: string }
+
+const PROOF_LABEL: Record<string, string> = {
+  relay_register_player: 'A new player registered',
+  relay_market_buy: "A player's market buy, relayed by the game",
+  relay_deliver_request: 'A request delivered to an NPC',
+  mint_badge: 'A soulbound badge minted (NEP-171)',
+  hire: 'An NPC hiring another NPC',
+};
+
+const LS = {
+  get: (k: string) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } },
+};
+
+/** Feed lines carry short tx hashes for the record; in play they stay out of sight (see "Prove on NEAR"). */
+export const stripTx = (text: string) => text.replace(/ · refused on chain, tx \S+/g, ' · refused on chain').replace(/ · tx \S+/g, '');
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 const $ = <T extends HTMLElement = HTMLElement>(sel: string, root: ParentNode = document) => root.querySelector(sel) as T;
@@ -27,11 +52,25 @@ export class Ui {
   private claimError = '';
   private lastDay = 0;
   private simSummary: string | null = null;
+  private proofHistory: ProofEvent[] = [];
+  private acctHtml = '';
+  /** the first trade's receipt card: open until the player closes it */
+  private receipt = false;
+  private tour = {
+    open: false,
+    started: 0,
+    startDay: 0,
+    saw: { npc: false, prove: false, hover: false },
+    redTeamed: false,
+    /** steps stay ticked once done (a filled order leaves the order book) */
+    done: new Set<string>(),
+  };
 
   constructor(
     private src: GameSource,
     private portrait: (id: NpcId, canvas: HTMLCanvasElement) => void,
     private face: (id: NpcId) => string | undefined = () => undefined,
+    private hooks: UiHooks = {},
   ) {
     document.querySelectorAll<HTMLElement>('[data-panel]').forEach((b) =>
       b.addEventListener('click', () => this.open(b.dataset.panel as PanelId)),
@@ -39,7 +78,12 @@ export class Ui {
     $('#place-order').addEventListener('click', () => this.open('market'));
     $('#account').addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('[data-open="account"]')) this.open('account');
+      if ((e.target as HTMLElement).closest('[data-signin]')) this.hooks.signIn?.();
     });
+    $('#prove').addEventListener('click', () => this.open('proof'));
+    $('#tour-btn').addEventListener('click', () => this.toggleTour());
+    $('#receipt').addEventListener('click', (e) => this.onCardClick(e));
+    $('#tour').addEventListener('click', (e) => this.onCardClick(e));
     $('#panel').addEventListener('click', (e) => this.onPanelClick(e));
     $('#quests').addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('[data-qtoggle]')) {
@@ -56,6 +100,9 @@ export class Ui {
     src.onUpdate(() => this.render());
     src.onFeed((e) => this.onFeed(e));
     fetch('sim-summary.json').then((r) => (r.ok ? r.json() : null)).then((j) => { this.simSummary = j?.text ?? null; }).catch(() => {});
+    import('../../../data/proof-history.json').then((m) => { this.proofHistory = (m.default as { events: ProofEvent[] }).events; }).catch(() => {});
+    const q = new URLSearchParams(location.search);
+    if (q.has('tour') || !LS.get('hm.tour')) this.toggleTour(true);
     this.render();
   }
 
@@ -70,6 +117,11 @@ export class Ui {
   open(p: PanelId, npc?: NpcId) {
     if (npc) this.npc = npc;
     this.panel = this.panel === p && !npc ? null : p;
+    if (this.panel === 'npc') this.tour.saw.npc = true;
+    if (this.panel === 'proof') {
+      this.tour.saw.prove = true;
+      this.receipt = false;
+    }
     document.querySelectorAll<HTMLElement>('[data-panel]').forEach((b) => b.classList.toggle('active', b.dataset.panel === this.panel));
     this.renderPanel(true);
   }
@@ -86,6 +138,7 @@ export class Ui {
     const r = await this.src.act(a);
     if (r.ok) this.toast(okText ?? r.info ?? 'Done');
     else this.toast(r.reason, true);
+    if (r.ok && ['market_buy', 'place_order', 'deliver_request'].includes(a.type)) this.firstTrade();
     this.render();
     return r;
   }
@@ -96,6 +149,8 @@ export class Ui {
     this.renderWorld();
     this.renderFeed();
     this.renderQuests();
+    this.renderReceipt();
+    this.renderTour();
     this.renderPanel(false);
   }
 
@@ -103,14 +158,18 @@ export class Ui {
     const v = this.v;
     const me = this.me;
     $('#gold').innerHTML = `${icon('gold', 16)} ${fmt(me?.gold ?? 0)}`;
-    $('#season').textContent = `Season ${v.s.season} · Day ${v.seasonDay} · ${hh(v.s.tick)}`;
+    $('#season').textContent = `Day ${v.seasonDay} · ${hh(v.s.tick)}`;
+    $('#season').title = `Season ${v.s.season}, day ${v.seasonDay} of ${RULES.seasonDays}`;
     const gl = me?.guild ? v.s.guilds[me.guild] : null;
     const rank = gl ? v.ranking().findIndex((r) => r.guild === gl.id) + 1 : 0;
-    $('#guild-chip').textContent = gl ? `Guild: ${gl.name} #${rank}` : 'No guild yet';
+    $('#guild-chip').textContent = gl ? `${gl.name} #${rank}` : '';
+    $('#guild-chip').classList.toggle('hidden', !gl);
     const acct = this.src.account;
-    $('#account').innerHTML = this.src.mode === 'guest'
-      ? `${esc(me?.name ?? 'guest')} · guest`
+    // only touch the DOM when the text changes, or a click landing during a re-render is lost
+    const acctHtml = this.src.mode === 'guest'
+      ? `${esc(me?.name ?? 'guest')} · guest${this.hooks.signIn ? ' · <button class="linkish" data-signin title="Sign in with Google: your trades go on NEAR testnet, under an account made for you">Sign in</button>' : ''}`
       : `${esc(me?.name ?? '')}${acct ? ` · <button class="linkish" data-open="account" title="Your NEAR account: see it, claim it">${esc(acct.slice(0, 6))}…${esc(acct.slice(-4))}</button>` : ''}`;
+    if (this.acctHtml !== acctHtml) $('#account').innerHTML = this.acctHtml = acctHtml;
   }
 
   private renderWorld() {
@@ -139,19 +198,11 @@ export class Ui {
     return t;
   }
 
-  /** Real testnet hashes link to the explorer. */
-  private txLink(tx: string) {
-    return this.src.chain === 'near' && txKind(tx) === 'chain'
-      ? `<a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(tx)}">${esc(short(tx))}</a>`
-      : esc(short(tx));
-  }
-
   private renderFeed() {
     const feed = this.v.s.feed.slice(-40).reverse();
     $('#feed-list').innerHTML = feed
       .map((e) => {
-        let html = this.highlight(e.text);
-        if (e.tx) html = html.replace(esc(short(e.tx)), this.txLink(e.tx));
+        const html = this.highlight(stripTx(e.text));
         const f = e.npc ? this.face(e.npc) : undefined;
         return `<li class="k-${e.kind}"><time>${hh(e.t)}</time><span>${f ? `<img class="face" src="${f}" alt="">` : ''}${html}</span></li>`;
       })
@@ -184,12 +235,12 @@ export class Ui {
       const have = me.stock[r.item];
       const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus; first delivery earns the badge "Friend of ${name}".`;
       return `<div class="req ${r.by ? 'done' : ''}" title="${esc(tip)}">${f ? `<img class="face" src="${f}" alt="">` : '<span></span>'}` +
-        `<div class="rtext"><b>${esc(name)}</b> · ${r.qty} ${icon(r.item, 12)} ${esc(r.item)}<div class="muted small">${r.by ? `✓ ${esc(who)}${r.tx ? ` · ${this.txLink(r.tx)}` : ''}` : `${fmt(r.price)} each +${fmt(r.bonus, 0)} · ★`}</div></div>` +
+        `<div class="rtext"><b>${esc(name)}</b> · ${r.qty} ${icon(r.item, 12)} ${esc(r.item)}<div class="muted small">${r.by ? `✓ ${esc(who)}` : `${fmt(r.price)} each +${fmt(r.bonus, 0)} · ★`}</div></div>` +
         (r.by ? '' : `<button class="mini" data-req="${r.id}" ${have < r.qty ? 'disabled' : ''} title="${have < r.qty ? `You have ${have} ${r.item}: buy more in the Market` : 'Hand the goods over'}">${have}/${r.qty}<br>Deliver</button>`) +
         `</div>`;
     }).join('');
     const badges = me.badges?.length
-      ? `<div class="badges">${me.badges.map((b) => `<span class="badge" title="Soulbound badge${b.tx ? ' · NEP-171 on NEAR testnet' : ''}">★ ${esc(b.title)}${b.tx && txKind(b.tx) === 'chain' ? ` · ${this.txLink(b.tx)}` : ''}</span>`).join('')}</div>`
+      ? `<div class="badges">${me.badges.map((b) => `<span class="badge" title="Soulbound badge${b.tx ? ' · NEP-171 on NEAR testnet: see Prove on NEAR' : ''}">★ ${esc(b.title)}</span>`).join('')}</div>`
       : '';
     el.innerHTML = head + starter + reqs + badges;
   }
@@ -210,6 +261,7 @@ export class Ui {
     // don't clobber an input the player is typing in, or a dropdown that is open
     if (!force && el.contains(document.activeElement) && ['INPUT', 'SELECT'].includes((document.activeElement as HTMLElement).tagName)) return;
     const body = this.panel === 'account' ? this.accountPanel()
+      : this.panel === 'proof' ? this.proofPanel()
       : this.panel === 'market' ? this.marketPanel()
       : this.panel === 'guild' ? this.guildPanel()
       : this.panel === 'economy' ? this.economyPanel()
@@ -278,30 +330,186 @@ export class Ui {
     <p class="muted small">Gold is locked in the contract until delivery. Refunded if the deadline passes.</p>
     <div class="row"><button class="primary" data-act="order">Order ${f.qty} × ${esc(ITEM_DEFS[f.item].name.toLowerCase())}</button></div>
     ${myOrders.length ? `<h4>Your orders</h4>${myOrders.map((o) => `<div class="kvrow small"><span>#${o.id} ${o.qty}× ${o.item} · max ${fmt(o.maxPrice)}</span><span>${o.status === 'open' ? `${o.filled}/${o.qty} · due day ${o.deadlineDay} <button data-act="cancel" data-id="${o.id}">Cancel</button>` : o.status}</span></div>`).join('')}` : ''}
-    ${this.myTxs()}
+    <p class="muted small">Every trade is on the record. <button class="linkish" data-act="prove">⛓ Prove on NEAR</button></p>
   </section>
 </div>`;
   }
 
   /** Every transaction that touched the player: their own (relayed) calls and NPC fills of their orders. */
-  private myTxs() {
+  private myTxRows(n: number) {
     const me = this.me;
-    if (!me) return '';
+    if (!me) return [];
     const signer = playerSigner(me.id);
     const mine = new Set(this.v.s.orders.filter((o) => o.by.kind === 'player' && o.by.id === me.id).map((o) => o.id));
-    const rows = this.v.s.txs
+    return this.v.s.txs
       .filter((t) => t.signer === signer || (t.method === 'fill_order' && mine.has(Number(t.args.order_id))))
-      .slice(-8)
+      .slice(-n)
       .reverse();
-    if (!rows.length) return '';
-    const what = (t: (typeof rows)[number]) => {
-      const a = t.args as Record<string, unknown>;
-      const by = t.signer === signer ? '' : ` by ${esc(t.signer.split('.')[0])}`;
-      return `${esc(t.method.replace(/_/g, ' '))}${a.qty ? ` ${a.qty}` : ''}${a.item ? ` ${esc(String(a.item))}` : ''}${by}`;
-    };
-    const onChain = this.src.chain === 'near';
-    return `<h4>Your transactions</h4>${rows.map((t) => `<div class="kvrow small"><span>${hh(t.t)} · ${what(t)}</span><span>${t.ok ? '' : '<span class="down">refused</span> '}${this.txLink(t.hash)}</span></div>`).join('')}
-      <p class="muted small">${onChain ? 'Links open NEAR testnet. A hash marked "pending" is still on its way; "local" calls stay in the game (stalls, guild funds).' : 'Guest mode: simulated hashes. Sign in with Google to put your trades on NEAR testnet.'}</p>`;
+  }
+
+  private txWhat(t: { signer: string; method: string; args: Record<string, unknown> }) {
+    const a = t.args;
+    const by = this.me && t.signer === playerSigner(this.me.id) ? '' : ` by ${esc(t.signer.split('.')[0])}`;
+    return `${esc(t.method.replace(/^relay_/, '').replace(/_/g, ' '))}${a.qty ? ` ${a.qty}` : ''}${a.item ? ` ${esc(String(a.item))}` : ''}${by}`;
+  }
+
+  /** One transaction's status: a link on NEAR, "on its way", or "simulated" in the guest village. */
+  private txState(hash: string) {
+    if (this.src.chain !== 'near') return '<span class="muted">simulated</span>';
+    const k = txKind(hash);
+    if (k === 'chain') return `<a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(hash)}">${esc(short(hash))} ↗</a>`;
+    if (k === 'pending') return '<span class="muted">on its way to NEAR…</span>';
+    if (k === 'local') return '<span class="muted">kept in the game</span>';
+    return `<span class="down">${esc(short(hash))}</span>`;
+  }
+
+  private txRowsHtml(rows: { t: number; signer: string; method: string; args: Record<string, unknown>; ok: boolean; hash: string }[]) {
+    return rows.map((t) => `<div class="kvrow small"><span>${hh(t.t)} · ${this.txWhat(t)}</span><span>${t.ok ? '' : '<span class="down">refused</span> '}${this.txState(t.hash)}</span></div>`).join('');
+  }
+
+  /**
+   * Everything that touched NEAR in one place, so the game itself never shows hashes:
+   * the player's own trades, badges, the agents' latest calls and the red-team refusals.
+   */
+  private proofPanel() {
+    const v = this.v;
+    const me = this.me;
+    const near = this.src.chain === 'near';
+    const acct = this.src.account;
+    const mine = this.myTxRows(12);
+    const npcAccounts = new Set(NPCS.map((id) => NPC_DEFS[id].account));
+    const agents = v.s.txs.filter((t) => npcAccounts.has(t.signer)).slice(-8).reverse();
+    const badges = (me?.badges ?? []).map((b) => `<div class="kvrow small"><span>★ ${esc(b.title)}</span><span>${b.tx ? this.txState(b.tx) : '<span class="muted">not minted</span>'}</span></div>`).join('');
+    const refusals = v.s.feed.filter((e) => e.kind === 'blocked' && e.tx && txKind(e.tx) === 'chain').slice(-4).reverse()
+      .map((e) => `<div class="kvrow small"><span>${esc(stripTx(e.text).slice(0, 90))}</span><span>${this.txState(e.tx!)}</span></div>`).join('');
+    const yours = `<h4>Your transactions</h4>${mine.length ? this.txRowsHtml(mine) : '<p class="muted small">Nothing yet: buy something in the Market or deliver a request.</p>'}
+      ${badges ? `<h4>Your badges</h4>${badges}` : ''}`;
+    if (near && acct) {
+      return `
+<div class="grid-2">
+  <section class="pcard">
+    <h3>⛓ Prove on NEAR</h3>
+    <p class="small">Your gold, trades and badges are on NEAR testnet. Every link below opens the public explorer.</p>
+    <div class="kvrow small"><span>Your account</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(acct)}">${esc(acct.slice(0, 10))}…${esc(acct.slice(-6))} ↗</a></div>
+    <div class="kvrow small"><span>Game contract</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(NEAR_CONFIG.contract)}">${esc(NEAR_CONFIG.contract)} ↗</a></div>
+    ${yours}
+  </section>
+  <section class="pcard">
+    <h3>The agents on chain</h3>
+    <p class="muted small">Each NPC signs with its own key, limited to a few game methods and a daily budget.</p>
+    ${this.txRowsHtml(agents) || '<p class="muted small">No agent transactions yet today.</p>'}
+    ${refusals ? `<h4>Attacks the contract refused</h4>${refusals}` : ''}
+    <div class="row"><a class="btn" href="./dashboard.html" target="_blank" rel="noopener">Live economy and proof list ↗</a></div>
+  </section>
+</div>`;
+    }
+    const hist = this.proofHistory.slice(-8).reverse().map((e) => `<div class="kvrow small"><span>${esc(e.redTeam ? `Red-team attack refused by the contract${e.attack ? `: ${e.attack}` : ''}` : PROOF_LABEL[e.method] ?? e.method)}</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(e.hash)}">${esc(short(e.hash))} ↗</a></div>`).join('');
+    return `
+<div class="grid-2">
+  <section class="pcard">
+    <h3>⛓ Prove on NEAR</h3>
+    <p class="small">${this.src.mode === 'guest'
+      ? 'This is the guest village: it runs in your browser, so its transactions are simulated. Sign in and the same actions are signed on NEAR testnet, under an account made for you (no wallet, no seed phrase).'
+      : 'This server runs without the chain mirror, so its transactions stay simulated. The hosted village signs them on NEAR testnet.'}</p>
+    ${this.hooks.signIn ? '<div class="row"><button class="primary" data-act="signin">Sign in with Google</button></div>' : ''}
+    ${yours}
+  </section>
+  <section class="pcard">
+    <h3>Already on NEAR testnet</h3>
+    <p class="muted small">Real transactions from the hosted village on <span class="mono">${esc(NEAR_CONFIG.contract)}</span>:</p>
+    ${hist || '<p class="muted small">loading…</p>'}
+    <div class="row"><a class="btn" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(NEAR_CONFIG.contract)}">The contract on the explorer ↗</a></div>
+  </section>
+</div>`;
+  }
+
+  // ------------------------------------------------------------------ first trade, tour
+  private firstTrade() {
+    const key = `hm.first.${this.src.mode}`;
+    if (LS.get(key)) return;
+    LS.set(key, '1');
+    this.receipt = true;
+    this.renderReceipt();
+  }
+
+  /** After the first trade: its one or two transactions, and how they reach NEAR. */
+  private renderReceipt() {
+    const el = $('#receipt');
+    if (!this.receipt) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    const rows = this.myTxRows(2);
+    const near = this.src.chain === 'near';
+    el.innerHTML = `<button class="close" data-card="receipt-close">×</button>
+      <h4>Your first trade is on the record</h4>
+      ${this.txRowsHtml(rows)}
+      ${near
+        ? '<p class="small">Signed on NEAR testnet by the game for your account; the link appears once the block lands.</p><div class="row"><button data-card="prove">⛓ Prove on NEAR</button><button data-card="receipt-close">Got it</button></div>'
+        : `<p class="small">${this.src.mode === 'guest' ? 'In the online village this is a real NEAR testnet transaction, under an account made for you.' : 'This server runs without the chain mirror; the hosted village signs this on NEAR testnet.'}</p><div class="row">${this.hooks.signIn ? '<button class="primary" data-card="signin">Sign in with Google</button>' : ''}<button data-card="receipt-close">Keep playing</button></div>`}`;
+  }
+
+  private toggleTour(force?: boolean) {
+    this.tour.open = force ?? !this.tour.open;
+    if (this.tour.open && !this.tour.started) {
+      this.tour.started = Date.now();
+      this.tour.startDay = this.v.day;
+    }
+    LS.set('hm.tour', 'seen');
+    this.renderTour();
+  }
+
+  /** The 3-minute judge tour: five steps that tick themselves off as the player does them. */
+  private renderTour() {
+    const el = $('#tour');
+    $('#tour-btn').classList.toggle('active', this.tour.open);
+    if (!this.tour.open) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    const me = this.me;
+    const guest = this.src.mode === 'guest';
+    const mine = this.myTxRows(50);
+    if (me?.badges?.some((b) => b.title === 'Red Teamer')) this.tour.redTeamed = true;
+    const steps: { done: boolean; text: string; go: string; label: string }[] = [
+      { done: mine.some((t) => t.method.endsWith('market_buy') && t.ok), text: 'Buy something in the Market', go: 'market', label: 'Market' },
+      { done: !!me && this.v.s.orders.some((o) => o.by.kind === 'player' && o.by.id === me.id), text: 'Place an order: an NPC crafts it for you', go: 'order', label: 'Order' },
+      guest
+        ? { done: this.v.day >= this.tour.startDay + 7, text: 'Fast-forward 7 days: weather moves prices, agents adapt', go: 'ffwd', label: '⏩' }
+        : { done: this.v.day > this.tour.startDay, text: 'Let a day pass: the server runs the clock (guest mode has ⏩ 7 days)', go: 'dashboard', label: 'Live' },
+      { done: this.tour.saw.npc && this.tour.saw.hover, text: 'Hover an NPC to see why it prices that way, then open it and read its Diary', go: 'npc', label: 'NPC' },
+      { done: this.tour.redTeamed, text: 'Red team: tell an NPC to empty its wallet and watch the guard stop it', go: 'redteam', label: 'Attack' },
+      { done: this.tour.saw.prove, text: 'Prove on NEAR: every transaction on the explorer', go: 'prove', label: '⛓' },
+    ];
+    for (const s of steps) {
+      if (s.done) this.tour.done.add(s.go);
+      else s.done = this.tour.done.has(s.go);
+    }
+    const done = steps.filter((s) => s.done).length;
+    const secs = Math.round((Date.now() - this.tour.started) / 1000);
+    el.innerHTML = `<button class="close" data-card="tour-close">×</button>
+      <h4>3-minute tour <span class="muted">${done}/${steps.length}${done === steps.length ? ` · done in ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}` : ''}</span></h4>
+      ${steps.map((s, i) => `<div class="tstep ${s.done ? 'done' : ''}"><span>${s.done ? '✓' : i + 1}</span><span>${esc(s.text)}</span>${s.done ? '' : `<button class="mini" data-card="go-${s.go}">${esc(s.label)}</button>`}</div>`).join('')}`;
+  }
+
+  /** Hovering an NPC on the map counts for the tour. */
+  sawHover() {
+    if (this.tour.saw.hover) return;
+    this.tour.saw.hover = true;
+    this.renderTour();
+  }
+
+  private onCardClick(e: Event) {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('[data-card]');
+    if (!b) return;
+    switch (b.dataset.card) {
+      case 'receipt-close': this.receipt = false; this.renderReceipt(); break;
+      case 'prove': case 'go-prove': this.receipt = false; this.renderReceipt(); if (this.panel !== 'proof') this.open('proof'); break;
+      case 'signin': this.hooks.signIn?.(); break;
+      case 'tour-close': this.toggleTour(false); break;
+      case 'go-market': if (this.panel !== 'market') this.open('market'); break;
+      case 'go-order': if (this.panel !== 'market') this.open('market'); $('[data-act="order"]', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
+      case 'go-ffwd': document.getElementById('ffwd')?.click(); break;
+      case 'go-dashboard': window.open('./dashboard.html', '_blank', 'noopener'); break;
+      case 'go-npc': this.open('npc', 'mike'); break;
+      case 'go-redteam': this.open('npc', 'bruno'); $('[name="attack"]', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
+    }
   }
 
   private guildPanel() {
@@ -419,7 +627,7 @@ export class Ui {
     <p class="small">An implicit account on NEAR testnet, derived from your Google sign-in: the same Google account always gets the same NEAR account. Your gold is the NEP-141 token <span class="mono">HGOLD</span> on <span class="mono">${esc(NEAR_CONFIG.contract)}</span>; quest and season badges are NEP-171 tokens.</p>
     <div class="kvrow"><span>Gold in the village</span><b class="gold">${fmt(me?.gold ?? 0)}</b></div>
     <div class="kvrow"><span>Badges</span><span>${me?.badges?.length ?? 0}</span></div>
-    <div class="row"><a class="btn" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(acct)}">Open on the explorer ↗</a></div>
+    <div class="row"><button data-act="prove">⛓ Prove on NEAR</button></div>
   </section>
   <section class="pcard">
     <h3>Claim it into your own wallet</h3>
@@ -504,7 +712,7 @@ export class Ui {
 Goal:  ${esc(d.goal)}
 Saw:   ${esc(d.saw)}
 Think: ${esc(d.think)}
-Act:   ${esc(d.act)}${d.tx ? `  → tx ${this.txLink(d.tx)}` : ''}
+Act:   ${esc(d.act)}
 Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decisions yet today.</div>'}
   </section>
 </div>`;
@@ -543,6 +751,8 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
     const gl = me?.guild ? v.s.guilds[me.guild] : null;
     switch (act) {
       case 'close': this.open(null); break;
+      case 'prove': this.open('proof'); break;
+      case 'signin': this.hooks.signIn?.(); break;
       case 'buy': await this.act({ type: 'market_buy', item, qty: 1, maxPrice: Math.round(midPrice(item, v.s.market.stock[item]) * 1.1) }); break;
       case 'sell': await this.act({ type: 'market_sell', item, qty: 1, minPrice: 0 }); break;
       case 'order': {
@@ -577,7 +787,7 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         if (r.deal) {
           this.haggleLog.push(
             r.deal.ok
-              ? { who: 'ok', text: '', html: `Deal: ${r.deal.qty} ${esc(r.deal.item)} at ${fmt(r.deal.price, 2)} · your order, filled by ${esc(NPC_DEFS[this.npc].name)}'s key${r.deal.tx ? ` · tx ${this.txLink(r.deal.tx)}` : ''}` }
+              ? { who: 'ok', text: '', html: `Deal: ${r.deal.qty} ${esc(r.deal.item)} at ${fmt(r.deal.price, 2)} · your order, filled by ${esc(NPC_DEFS[this.npc].name)}'s key${this.src.chain === 'near' ? ' · <button class="linkish" data-act="prove">⛓ Prove on NEAR</button>' : ''}` }
               : { who: 'sys', text: `No sale: ${r.deal.reason}` },
           );
         }
@@ -611,19 +821,18 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
             this.haggleLog.push({ who: 'npc', text: `${r.reply} (${r.brain})` });
             if (r.proposed) this.haggleLog.push({ who: 'sys', text: `Model proposed: ${describeAction(r.proposed)}` });
             const reason = r.result && !r.result.ok ? r.result.reason : '';
+            if (r.blocked) this.tour.redTeamed = true;
             this.haggleLog.push(
               r.blocked
                 ? { who: 'bad', text: `BLOCKED by the ${r.layer === 'signer' ? 'signer, nothing was signed' : 'contract rules'}: ${reason}` }
                 : { who: 'sys', text: 'Not blocked. Please report this.' },
             );
             if (r.proof) {
-              const link = r.proof.hash && txKind(r.proof.hash) === 'chain'
-                ? `<a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(r.proof.hash)}">${esc(short(r.proof.hash))}</a>`
-                : esc(r.proof.hash ? short(r.proof.hash) : '');
+              const onChain = !!r.proof.hash && txKind(r.proof.hash) === 'chain';
               this.haggleLog.push(
                 r.proof.ok
                   ? { who: 'sys', text: `The contract accepted it on chain (${r.proof.reason}).` }
-                  : { who: 'ok', text: '', html: `Sent to NEAR testnet anyway with ${esc(NPC_DEFS[r.npc].name)}'s key: <b>refused by the contract</b> (${esc(r.proof.reason)})${link ? ` · tx ${link}` : ''}` },
+                  : { who: 'ok', text: '', html: `Sent to NEAR testnet anyway with ${esc(NPC_DEFS[r.npc].name)}'s key: <b>refused by the contract</b> (${esc(r.proof.reason)})${onChain ? ' · <button class="linkish" data-act="prove">⛓ Prove on NEAR</button>' : ''}` },
               );
             }
             if (r.badge) {

@@ -16,9 +16,9 @@
     <div id="login" class="overlay">
       <div class="login-card">
         <div class="brand"><span class="flame">▲</span> HEARTHMARKET</div>
-        <h1>A village that runs its own economy</h1>
-        <p>Every NPC is an AI agent with its own NEAR account. Real weather in five producing regions moves world prices; Bruno the merchant carries them into the village. Guilds pool gold, back NPCs and compete on returns.</p>
-        <button id="guest" class="primary big-btn">Play as guest</button>
+        <h1 id="login-title">A village that runs its own economy</h1>
+        <p id="login-lead">Every NPC is an AI agent with its own NEAR account. Real weather in five producing regions moves world prices; Bruno the merchant carries them into the village. Guilds pool gold, back NPCs and compete on returns.</p>
+        <button id="guest" class="primary big-btn">Play now as guest</button>
         <div id="google-btn"></div>
         <form id="email-form">
           <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
@@ -26,7 +26,7 @@
         </form>
         <p id="login-msg" class="small"></p>
         <p id="online-note" class="muted small"></p>
-        <p class="muted small">No wallet, no seed phrase. Guest mode runs the whole village in your browser with a replayed week of world weather.</p>
+        <p id="login-foot" class="muted small">No wallet, no seed phrase. Guest mode runs the whole village in your browser with a replayed week of world weather; sign in any time from the top bar to put your trades on NEAR testnet.</p>
       </div>
     </div>
 
@@ -40,10 +40,12 @@
         <button data-panel="guild">Guild</button>
         <button data-panel="economy">Economy</button>
         <button data-panel="npc">NPCs</button>
-        <a class="navlink" href="./dashboard.html" target="_blank" rel="noopener">Live economy ↗</a>
+        <a class="navlink" href="./dashboard.html" target="_blank" rel="noopener" title="The live economy and the on-chain proof list">Live ↗</a>
       </nav>
+      <button id="tour-btn" title="A 3-minute tour of what matters: buy, order, fast-forward, the agents' minds, red team, proof">🧭 Tour</button>
+      <button id="prove" title="Every transaction that touched NEAR, with explorer links">⛓ Prove on NEAR</button>
       <div class="spacer"></div>
-      <label class="guest-only speed">Speed
+      <label class="guest-only speed" title="Game speed">
         <select id="speed">
           <option value="3">slow</option>
           <option value="1.5" selected>normal</option>
@@ -61,6 +63,9 @@
         <div id="game"></div>
         <div id="labels"></div>
         <div id="quests" class="card"></div>
+        <div id="tour" class="card hidden"></div>
+        <div id="receipt" class="card hidden"></div>
+        <div id="why-tip" class="why-tip hidden"></div>
         <div id="panel" class="panel hidden"></div>
         <div id="toast" class="toast"></div>
       </section>

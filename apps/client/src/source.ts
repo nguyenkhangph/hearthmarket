@@ -77,6 +77,7 @@ export class LocalSource implements GameSource {
     this.playerId = playerName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'guest';
     this.v.addPlayer(this.playerId, playerName);
     this.v.onFeed((e) => this.feeds.forEach((f) => f(e)));
+    this.negotiate(); // today's deals: the sellers walk over at 7:00
     this.setSpeed(1.5);
   }
 
@@ -86,6 +87,11 @@ export class LocalSource implements GameSource {
 
   private speed = 1.5;
   private ffDone?: () => void;
+
+  /** true while ⏩ runs: the map skips the agents' conversations */
+  get fastForwarding() {
+    return !!this.ffDone || this.speed < 0.3;
+  }
 
   setSpeed(secondsPerHour: number) {
     this.speed = secondsPerHour;
