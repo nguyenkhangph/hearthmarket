@@ -275,3 +275,26 @@ table.mkt td { white-space: nowrap; }
 table.mkt td button { padding: 1px 7px; font-size: 12px; box-shadow: inset 0 1px 0 #ffffff14, 0 2px 0 var(--wood-dark); }
 table.mkt td:last-child { text-align: right; }
 table.mkt .spark { width: 72px; }
+
+/* ------------------------------------------------------------------ judge tour, first-trade receipt, why-this-price */
+#tour { position: absolute; left: 12px; top: 12px; z-index: 4; width: 280px; padding: 8px 12px 10px; background: #1e2130f2; }
+#receipt { position: absolute; right: 12px; bottom: 12px; z-index: 6; width: 300px; padding: 8px 12px 10px; background: #1e2130f7; border-color: var(--gold); }
+#tour h4, #receipt h4 { margin: 2px 24px 6px 0; font: 600 14px var(--pixel); color: #f0c56b; }
+#tour h4 .muted { font: 12px var(--sans); margin-left: 6px; }
+#tour .close, #receipt .close { position: absolute; right: 6px; top: 4px; padding: 0 7px; font-size: 14px; }
+.tstep { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; align-items: center; font-size: 12.5px; padding: 4px 0; border-top: 1px dashed #5b433088; }
+.tstep > span:first-child { font: 600 12px var(--mono); color: var(--gold); }
+.tstep.done { opacity: 0.6; }
+.tstep.done > span:first-child { color: var(--up); }
+.tstep .mini { font-size: 11px; padding: 1px 7px; }
+#tour-btn.active { background: var(--parchment); color: var(--ink); }
+#prove { font-size: 13px; }
+.why-tip { position: absolute; left: 0; top: 0; z-index: 3; width: 290px; pointer-events: none; background: #fffaf0; color: #2a1d12; border: 2px solid var(--ink); border-radius: 6px; padding: 6px 10px; font-size: 12px; line-height: 1.35; box-shadow: 0 3px 0 #0007; }
+.why-tip .wt-head { font: 600 13px var(--pixel); margin-bottom: 2px; }
+.why-tip ul { margin: 4px 0; padding-left: 16px; }
+.why-tip li { margin: 2px 0; }
+.why-tip .muted { color: #7a6650; font-size: 11px; }
+.bubble-talk { white-space: normal; width: max-content; max-width: 210px; font-weight: 600; }
+.bubble-deal { background: #e6f7df; border-color: #2f6b2a; }
+#login.upgrade { background: #120d09cc; }
+.kvrow a.tx { white-space: nowrap; }

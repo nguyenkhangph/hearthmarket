@@ -190,6 +190,7 @@ export class Village {
     if (h === 0) this.startDay();
     switch (h) {
       case 6: this.allNpcs((n) => this.eat(n)); break;
+      case 7: this.settleDeals(); break;
       case 8: this.buyInputs(); break;
       case 10: this.fillOrders(); break;
       case 12: this.produceAll(); break;
@@ -461,6 +462,50 @@ export class Village {
     return plan;
   }
 
+  /** Inputs a crafter needs for today's crafting plan (units, before what it already holds). */
+  private inputNeed(n: NpcState): Partial<Record<ItemId, number>> {
+    const need: Partial<Record<ItemId, number>> = {};
+    for (const [item, q] of Object.entries(this.craftPlan(n)) as [ItemId, number][]) {
+      for (const [inp, per] of Object.entries(RECIPES[item] ?? {}) as [ItemId, number][]) {
+        need[inp] = (need[inp] ?? 0) + per * q;
+      }
+    }
+    return need;
+  }
+
+  /**
+   * 7:00: the agents who struck a deal this morning meet at the buyer's workshop (see
+   * `meetings`) and settle the first delivery on the spot, at the agreed price. The money
+   * still moves through `hire`, so the spending guard, the NPC key and the contract apply.
+   */
+  private settleDeals() {
+    for (const d of (this.s.deals ?? []).filter((x) => x.day === this.day && x.status === 'agreed' && x.used < x.maxQty)) {
+      const buyer = this.s.npcs[d.buyer];
+      const seller = this.s.npcs[d.seller];
+      const missing = (this.inputNeed(buyer)[d.item] ?? 0) - buyer.stock[d.item];
+      if (missing <= 0) continue;
+      const qty = Math.min(missing, seller.stock[d.item] - this.reservedFor(d.seller, d.item), d.maxQty - d.used);
+      if (qty > 0) this.hireUnderDeal(buyer, seller, d.item, qty, d, midPrice(d.item, this.s.market.stock[d.item]));
+    }
+  }
+
+  /** 6:00-10:59: each seller with a deal today walks over to the buyer's workshop (they settle at 7:00). */
+  meetings(): Map<NpcId, [number, number]> {
+    const out = new Map<NpcId, [number, number]>();
+    if (this.hour < 6 || this.hour > 10) return out;
+    const spots: [number, number][] = [[1, 1], [-1, 1], [2, 0]];
+    const used = new Map<NpcId, number>();
+    for (const d of (this.s.deals ?? []).filter((x) => x.day === this.day)) {
+      if (out.has(d.seller)) continue;
+      const k = used.get(d.buyer) ?? 0;
+      if (k >= spots.length) continue;
+      used.set(d.buyer, k + 1);
+      const [hx, hy] = HOME[d.buyer];
+      out.set(d.seller, [hx + spots[k][0], hy + spots[k][1]]);
+    }
+    return out;
+  }
+
   private buyInputs() {
     for (const id of NPCS) {
       const n = this.s.npcs[id];
@@ -473,13 +518,7 @@ export class Village {
           this.s.ledger.toolsWorn++;
         }
       }
-      const plan = this.craftPlan(n);
-      const need: Partial<Record<ItemId, number>> = {};
-      for (const [item, q] of Object.entries(plan) as [ItemId, number][]) {
-        for (const [inp, per] of Object.entries(RECIPES[item] ?? {}) as [ItemId, number][]) {
-          need[inp] = (need[inp] ?? 0) + per * q;
-        }
-      }
+      const need = this.inputNeed(n);
       for (const [inp, q] of Object.entries(need) as [ItemId, number][]) {
         const missing = q - n.stock[inp];
         if (missing <= 0) continue;
@@ -1508,12 +1547,13 @@ export class Village {
   }
 
   // ---------------------------------------------------------------- cosmetic movement
-  /** NPCs stay home, walk to the plaza for the afternoon market, then go home. The client animates the walk. */
+  /** NPCs stay home, sellers visit their buyers in the morning, everyone walks to the plaza for the afternoon market. The client animates the walk. */
   private wander() {
     const atMarket = this.hour >= 14 && this.hour <= 17;
+    const meet = this.meetings();
     for (const id of NPCS) {
       const n = this.s.npcs[id];
-      const [x, y] = atMarket ? MARKET_SPOT[id] : HOME[id];
+      const [x, y] = meet.get(id) ?? (atMarket ? MARKET_SPOT[id] : HOME[id]);
       n.x = x;
       n.y = y;
     }

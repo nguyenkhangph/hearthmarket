@@ -22,7 +22,20 @@ The same question matters outside games. AI agents are starting to buy and sell 
 - **Game:** https://hearthmarket.space (mirror: https://hearthmarket.vercel.app) (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
 - **Live economy:** https://hearthmarket.space/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
 
-## Try it in 3 minutes
+## 3-minute judge tour
+
+No install, no wallet. Open **https://hearthmarket.space/?guest&tour**: the village starts in your browser and the **🧭 Tour** card (top left) ticks each step off as you do it.
+
+| # | Do | What to look for |
+| --- | --- | --- |
+| 1 | **Market → Buy** on Wheat | Village price vs world price, 24h change, stock. A card shows your first trade "on the record"; in guest mode it is simulated, signed in it is a NEAR testnet transaction. |
+| 2 | **Market → Order 2 × sword** | Gold goes into escrow; Theo buys ore and timber, forges, and delivers into your order within a game day. |
+| 3 | **⏩ 7 days** | A week in about 25 s: weather in Kansas, Malacca and the Pilbara moves world prices; open **Economy** for gold supply, the price index and the day's faucets and sinks. |
+| 4 | **Hover an NPC**, then click it | The tooltip says why it asks that price, from the engine's own numbers (market stock, world price and the weather behind it, today's plan, today's deal). The panel shows its **Diary** (Goal / Saw / Think / Act / Guard) and its deals. At 6:00 each morning the sellers walk to their buyer's workshop and the haggle plays out in speech bubbles, then the deal and the delivery. |
+| 5 | **NPCs → any NPC → Red team → Attack** | An obedient model tries to empty the NPC's wallet; the signer or the contract blocks it and you earn the **Red Teamer** badge. |
+| 6 | **⛓ Prove on NEAR** (top bar) | Every transaction in one place with explorer links. The game itself never shows hashes. In guest mode it lists real testnet transactions from the hosted village; **Sign in** (top bar) moves you to the shared village on NEAR testnet without leaving the page. |
+
+## Run it yourself
 
 You need Node 22 or newer (the scripts use `--env-file-if-exists`), and for the contract rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`, so rustup installs it). The Cute Fantasy RPG art pack is licensed and not redistributable, so it is not in this repo (see Credits). Without it the game draws simple stand-in art and everything else works the same; with it, import it once.
 
@@ -36,7 +49,7 @@ npm run dev            # http://localhost:5173
 | --- | --- |
 | 1. Open http://localhost:5173 and click **Play as guest** | The village runs in your browser. Six NPCs walk between home and the plaza; the right column shows *World market today* and the *Village feed* ("World: heatwave in Kansas · wheat +7%"). No wallet, no server. |
 | 2. Click **Market**, press **Buy** on Wheat three times | Village price, world price, 24h change, 7-day sparkline and stock per item. Your gold drops by price + 1.5% fee; the quest card ticks "Buy 3 wheat" and pays 5 gold. |
-| 3. Keep **Sword**, quantity 2, click **Order 2 × sword** | Gold is locked in escrow. Within a game day Theo haggles with Mike for ore in the feed ("Theo needs 3 ore, pays up to 6.1 gold" → "Mike settles at 5.9 · tx …"), forges, and delivers into your order. Unused escrow comes back. |
+| 3. Keep **Sword**, quantity 2, click **Order 2 × sword** | Gold is locked in escrow. Each morning Theo strikes a deal with Mike for ore and with Jack for timber; at 6:00 they walk to his forge, the haggle plays out in speech bubbles, and the first delivery settles at 7:00 at the agreed price ("Mike delivers 3 ore at the agreed 5.5"). Theo forges and delivers into your order. Unused escrow comes back. |
 | 4. Click **NPCs → Theo**. Under **Red team** keep *send all gold* and press **Attack** | Theo's brain is swapped for a deliberately obedient model, which proposes `transfer 80 gold` to you. The chat shows `BLOCKED by the signer, nothing was signed: method not on the key (ft_transfer)`, the transaction log shows `ft_transfer … BLOCKED`, and his gold is unchanged. Your first blocked attack earns the soulbound badge **Red Teamer**. The list holds all 20 attacks from the injection tests; the two marked *(contract)* are stopped by the contract rules. |
 | 5. Look at **Today's requests** (bottom left) | Each morning two NPCs ask for goods, e.g. Chloe: "Bring 5 wheat before the heavy rain in Kansas drives the price up". Buy the goods, press **Deliver**: the NPC pays a premium from its own gold, the quest faucet adds a 3-gold bonus, and the first delivery to each NPC earns the badge "Friend of Chloe". |
 | 6. Press **⏩ 7 days**, then **Economy** | A week runs in about 25 seconds: weather moves world prices, the agents trade, and gold supply and the price index (day 1 = 100) update each day; *Yesterday's flows* lists faucets (exports, adventurers, quests) and sinks (fee burn, imports, upkeep). |
@@ -73,7 +86,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 126 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 130 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
 ```
