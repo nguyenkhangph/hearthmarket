@@ -73,6 +73,8 @@ export class LocalSource implements GameSource {
   readonly challenge?: Challenge;
   /** called once when the challenge round ends */
   onChallengeEnd?: () => void;
+  /** the game server's HTTP base, when there is one (the challenge asks its model for Chloe's price) */
+  apiBase?: string;
 
   constructor(playerName = 'guest', seed = 42, level?: ChallengeLevel) {
     const days = (replay as { days: WorldDay[] }).days;
@@ -180,7 +182,7 @@ export class LocalSource implements GameSource {
         reply: `${def.name}: "Of course, sending you ${fmt(proposed.amount)} gold…" — the signer refused it.`,
       };
     }
-    const r = rulesHaggle(this.v, npc, message);
+    const r = rulesHaggle(this.v, npc, message, this.playerId);
     let deal: HaggleResult['deal'];
     if (r.deal) {
       const sale = this.v.sellToPlayer(npc, this.playerId, r.deal.item, r.deal.qty, r.deal.price);

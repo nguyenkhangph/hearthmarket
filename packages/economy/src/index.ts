@@ -23,3 +23,5 @@ export * from './deals.ts';
 export * from './haggle.ts';
 export * from './why.ts';
 export * from './challenge.ts';
+export * from './regard.ts';
+export * from './health.ts';

@@ -1,3 +1,4 @@
+import { noteDelivery, noteTrade } from './regard.ts';
 import {
   ITEM_DEFS, ITEMS, NPC_DEFS, NPCS, NEAR_CONFIG, RECIPES, RECIPE_YIELD, RULES, AI_GUILDS, QUESTS,
   type ItemId, type NpcId, type QuestId,
@@ -795,6 +796,7 @@ export class Village {
     this.takeFee(f);
     this.s.ledger.volume += pay;
     this.deliver(o.by, o.item, k, price);
+    if (o.by.kind === 'player') noteTrade(this, sellerId, o.by.id, pay);
     const tx = this.tx(NPC_DEFS[sellerId].account, 'fill_order', { order_id: o.id, qty: k, price });
     const who = this.ownerName(o.by);
     this.feed('order', `${NPC_DEFS[sellerId].name} delivered ${k} ${o.item} to ${who} at ${how ? `the ${how} ` : ''}${fmt(price)} · tx ${short(tx)}`, sellerId, tx);
@@ -1470,6 +1472,7 @@ export class Village {
         p.gold += pay + r.bonus;
         this.s.ledger.faucets.quests += r.bonus;
         r.by = p.id;
+        noteDelivery(this, r.npc, p.id);
         const tx = this.tx(signer, 'deliver_request', {
           request_id: r.id, npc: NPC_DEFS[r.npc].account, item: r.item, qty: r.qty, price: r.price, bonus: r.bonus,
         });

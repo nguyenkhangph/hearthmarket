@@ -186,6 +186,8 @@ export interface TxRecord {
 }
 
 export interface VillageState {
+  /** what each NPC remembers about each player (regard.ts) */
+  regard?: Partial<Record<NpcId, Record<string, { trades: number; volume: Gold; delivered: number; lowballs: number; lastDay: number }>>>;
   seed: number;
   rngState: number;
   tick: number;

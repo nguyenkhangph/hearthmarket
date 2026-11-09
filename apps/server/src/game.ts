@@ -76,7 +76,7 @@ export class Game {
    * contract's checks; with CHAIN=near the contract checks it again). Either layer can block it.
    */
   async haggle(npc: NpcId, message: string, brain: NpcBrain = this.brain, playerId?: string): Promise<HaggleOutcome> {
-    const p = await brain.haggle(this.village, npc, message);
+    const p = await brain.haggle(this.village, npc, message, playerId);
     const deal = p.deal && playerId ? this.settleDeal(npc, playerId, p.deal) : undefined;
     if (!p.action) return { reply: p.reply, brain: p.brain, deal };
     const n = this.village.s.npcs[npc];

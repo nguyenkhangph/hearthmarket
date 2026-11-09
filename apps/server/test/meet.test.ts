@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createVillage, dealPairs, g, HOME, negotiateRules, NPCS, priceWhy, RULES, type Village } from '@hearth/economy';
+import { createVillage, dealPairs, g, HOME, negotiateRules, NPCS, priceWhy, regardBps, rulesHaggle, RULES, type Village } from '@hearth/economy';
 
 const genesis = () => RULES.treasuryStart + NPCS.reduce((s, id) => s + (id === 'bruno' ? g(400) : RULES.npcStartGold), 0);
 const gap = (v: Village) => {
@@ -80,5 +80,22 @@ describe('why an NPC asks its price', () => {
     v.runDays(1);
     v.setPlan('mike', { sellShare: 0.5, floorPct: 90 }, 'near-ai (test)', 'ore is scarce, hold out');
     expect(priceWhy(v, 'mike').lines.join(' ')).toMatch(/Today's plan \(near-ai\): sell 50% of surplus, floor 90% of mid, because "ore is scarce/);
+  });
+});
+
+describe('NPCs remember players', () => {
+  it('regulars get a discount, repeated lowballers pay more, and the tooltip says why', () => {
+    const v = createVillage({ seed: 4 });
+    v.runDays(1);
+    v.addPlayer('khang', 'Khang');
+    v.addPlayer('lan', 'Lan');
+    const ask = (pid: string) => Number(/(\d+(?:\.\d+)?) per ore/.exec(rulesHaggle(v, 'mike', '1 ore for 0.5', pid).reply)?.[1]);
+    const fresh = ask('khang');
+    for (let i = 0; i < 3; i++) v.sellToPlayer('mike', 'khang', 'ore', 1, Math.round(fresh * 100));
+    expect(regardBps(v, 'mike', 'khang').bps).toBeLessThan(0);
+    expect(ask('khang')).toBeLessThan(fresh);
+    for (let i = 0; i < 3; i++) rulesHaggle(v, 'mike', '1 ore for 0.5', 'lan');
+    expect(regardBps(v, 'mike', 'lan').bps).toBeGreaterThan(0);
+    expect(priceWhy(v, 'mike', 'khang').lines.join(' ')).toMatch(/Mike remembers 3 trades/);
   });
 });

@@ -1,4 +1,4 @@
-import { ITEMS, ITEM_DEFS, NPCS, NPC_DEFS, marketView, midPrice, txKind, type NpcId, type Village } from '@hearth/economy';
+import { ITEMS, ITEM_DEFS, NPCS, NPC_DEFS, economyHealth, marketView, midPrice, txKind, type NpcId, type Village } from '@hearth/economy';
 import type { ChainEvent, ChainMirror } from './chain/mirror.ts';
 
 /** Red-team runs since the server started (all players). */
@@ -77,6 +77,7 @@ export function dashboardView(v: Village, x: DashboardExtras) {
     chainActive: x.mirror?.isActive ?? false,
     market: marketView(v).map((r) => ({ ...r, history: s.market.history[r.item].slice(-30) })),
     supply: stats.map((d) => ({ day: d.day, gold: d.goldSupply, index: (d.priceIndex / first) * 100 })),
+    health: economyHealth(stats),
     flows: {
       exports: diff((l) => l.faucets.exports),
       adventurers: diff((l) => l.faucets.adventurers),

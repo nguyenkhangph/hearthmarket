@@ -23,6 +23,7 @@ type Dash = {
   brain: string; chain: 'mock' | 'near'; contract: string; chainActive: boolean;
   market: { item: string; name: string; village: number; world?: number; change24h: number; stock: number; target: number; history: number[] }[];
   supply: { day: number; gold: number; index: number }[];
+  health?: { status: 'collecting' | 'stable' | 'inflation' | 'deflation'; text: string; seasons: { season: number; days: number; avgIndex: number; endSupply: number; supplyChange: number }[] };
   flows: Record<'exports' | 'adventurers' | 'quests' | 'feeBurn' | 'imports' | 'upkeep' | 'volume', number>;
   world: { regions: { name: string; headline: string; severity: number; forecast?: string }[]; shippingBps: number; source: string; fx?: { factor: number; quote: string; source: string; at: string } };
   npcs: { id: string; name: string; title: string; account: string; gold: number; stockValue: number; netWorth: number; spentToday: number; dailyBudget: number; think: string; act: string; guard: string; diaryTx?: string; planBy?: string; nearBalance?: number; recentChainTxs: number; history: number[] }[];
@@ -116,6 +117,9 @@ function render(d: Dash) {
   ${line(supply, '#e3a83b')}
   <h2>Price index <span class="muted small">day 1 = 100</span></h2>
   ${line(index, '#8db8ff', 260, 64, 100)}
+  ${d.health ? `<h2>Economy health <span class="tag ${d.health.status === 'stable' ? '' : 'red'}">${esc(d.health.status)}</span></h2>
+  <div class="small">${esc(d.health.text)}</div>
+  ${d.health.seasons.length ? `<table class="small"><tbody><tr><th>Season</th><th>Days</th><th>Avg index</th><th>Gold supply</th></tr>${d.health.seasons.map((x) => `<tr><td>${x.season}</td><td>${x.days}</td><td class="mono">${x.avgIndex.toFixed(1)}</td><td class="mono">${gold(x.endSupply, 0)} <span class="${x.supplyChange >= 0 ? 'up' : 'down'}">${pct(x.supplyChange)}</span></td></tr>`).join('')}</tbody></table>` : ''}` : ''}
 </section>
 
 <section class="card">

@@ -3,7 +3,7 @@ import {
   type Action, type ItemId, type NpcId, type Village, type FeedEvent, type MarketRow,
 } from '@hearth/economy';
 import { icon } from './assets.ts';
-import { replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
+import { economyHealth, negotiateContractRules, regardBps, replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
 import replayWeek from '../../../data/world/replay-kansas-heatwave.json';
 import type { GameSource } from './source.ts';
 
@@ -56,6 +56,7 @@ export class Ui {
   private simSummary: string | null = null;
   private proofHistory: ProofEvent[] = [];
   private ch?: Challenge;
+  private chBusy = false;
   private chResult?: { r: ChallengeResult; replayed: boolean };
   private acctHtml = '';
   /** the first trade's receipt card: open until the player closes it */
@@ -86,8 +87,10 @@ export class Ui {
     });
     $('#prove').addEventListener('click', () => this.open('proof'));
     $('#tour-btn').addEventListener('click', () => this.toggleTour());
-    $('#receipt').addEventListener('click', (e) => this.onCardClick(e));
-    $('#tour').addEventListener('click', (e) => this.onCardClick(e));
+    // these cards re-render with the clock: act on pointerdown so a click is never lost mid-render
+    for (const id of ['#receipt', '#tour']) {
+      $(id).addEventListener('pointerdown', (e) => this.cardDown(e as PointerEvent));
+    }
     $('#panel').addEventListener('click', (e) => this.onPanelClick(e));
     $('#quests').addEventListener('click', (e) => {
       if ((e.target as HTMLElement).closest('[data-qtoggle]')) {
@@ -109,7 +112,8 @@ export class Ui {
     this.ch = (src as { challenge?: Challenge }).challenge;
     if (this.ch) {
       (src as { onChallengeEnd?: () => void }).onChallengeEnd = () => this.challengeEnd();
-      $('#challenge').addEventListener('click', (e) => this.onCardClick(e));
+      // the card re-renders every game hour: act on pointerdown so a click is never lost mid-render
+      $('#challenge').addEventListener('pointerdown', (e) => this.cardDown(e as PointerEvent));
     } else if (q.has('tour') || !LS.get('hm.tour')) this.toggleTour(true);
     this.render();
   }
@@ -177,17 +181,47 @@ export class Ui {
     const worth = c.worth();
     const d = worth - c.startWorth;
     const hoursLeft = Math.max(0, c.endTick - c.v.s.tick);
+    // keep what the player is typing across the hourly re-render
+    const typed = el.querySelector<HTMLInputElement>('[name="pitch"]');
+    const keep = typed ? { v: typed.value, focus: document.activeElement === typed, pos: typed.selectionStart ?? typed.value.length } : null;
     el.innerHTML = `
       <h4>🏆 Harvest challenge <span class="muted">${esc(sp.level)} · seed ${sp.seed}</span></h4>
       <div class="small">Day ${Math.min(c.day, sp.days)} of ${sp.days} · ${hh(c.v.s.tick)} · <b>${hoursLeft} h left</b> (ends 18:00 day ${sp.days})</div>
       <ul class="bulletin">${c.bulletin().slice(0, 2).map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
       <div class="kvrow small"><span>Contract: ${k.qty} ${esc(k.item)} → ${esc(NPC_DEFS[k.npc].name)} at ${fmt(c.contractPrice, 2)}</span>
         <span>${c.delivered ? '<b class="up">kept ✓</b>' : `you hold ${p.stock[k.item]}/${k.qty} <button class="mini primary" data-card="ch-deliver" ${p.stock[k.item] < k.qty ? 'disabled' : ''}>Deliver</button>`}</span></div>
+      ${!c.delivered && c.contractBy === 'default' ? `<div class="row"><input name="pitch" class="grow" placeholder="Pitch Chloe, e.g. 'I deliver early, ${fmt(Math.round(c.contractMid * 1.3), 2)}?'" maxlength="200"><button class="mini" data-card="ch-negotiate" ${this.chBusy ? 'disabled' : ''} title="Chloe answers with the game server's model (NEAR AI Cloud) when it is reachable, else with rules. Price stays within ${fmt(c.contractRange()[0], 2)}-${fmt(c.contractRange()[1], 2)}.">🤝 Negotiate</button></div>` : ''}
+      ${c.contractBy !== 'default' ? `<div class="small"><span class="src ${/^rules/.test(c.contractBy) ? 'rules' : 'llm'}">${esc(/^rules/.test(c.contractBy) ? c.contractBy : `LLM · ${c.contractBy}`)}</span> Chloe: "${esc(c.contractSay)}"</div>` : ''}
       <div class="kvrow small"><span>${esc(k.item)} now</span><span class="mono">${fmt(midPrice(k.item, c.v.s.market.stock[k.item]), 2)}</span></div>
       <div class="kvrow small"><span>Net worth (goods at what the market pays)</span><span class="mono ${d >= 0 ? 'up' : 'down'}">${fmt(worth)} (${d >= 0 ? '+' : ''}${fmt(d)})</span></div>
       <div class="kvrow small"><span>Goal</span><span class="mono">contract kept and +${fmt(sp.target, 0)}</span></div>
       <div class="row"><button class="mini" data-card="go-market">Market</button><button class="mini" data-card="go-ffwd" title="Run the rest of the round quickly">⏩ to the end</button></div>
       <div class="muted small">Scenario: scripted blight on a replayed weather week. Your moves are recorded; the end card replays them to check the score.</div>`;
+    const input = el.querySelector<HTMLInputElement>('[name="pitch"]');
+    if (input && keep) {
+      input.value = keep.v;
+      if (keep.focus) {
+        input.focus();
+        input.setSelectionRange(keep.pos, keep.pos);
+      }
+    }
+  }
+
+  /** Chloe's answer: the server's model if it answers, else the rules in the browser. */
+  private async negotiateContract(c: Challenge, pitch: string) {
+    const base = (this.src as { apiBase?: string }).apiBase;
+    let r: { price: number; say: string; by: string } | null = null;
+    if (base) {
+      try {
+        const res = await fetch(`${base}/api/challenge/contract`, { method: 'POST', headers: { 'content-type': 'text/plain' }, body: JSON.stringify({ mid: c.contractMid, pitch }) });
+        if (res.ok) r = await res.json();
+      } catch {
+        /* offline: rules below */
+      }
+    }
+    r ??= { ...negotiateContractRules(c.contractMid, pitch), by: 'rules (offline)' };
+    const out = c.setContractPrice(r.price, r.by, r.say);
+    this.toast(out.ok ? `Chloe: ${r.say}` : out.reason, !out.ok);
   }
 
   private challengeEnd() {
@@ -567,6 +601,16 @@ export class Ui {
     this.renderTour();
   }
 
+  /**
+   * A card button acts on pointerdown. preventDefault stops the mouse events that follow, so a
+   * card that shrinks as it re-renders cannot pass the click to an NPC on the map behind it.
+   */
+  private cardDown(e: PointerEvent) {
+    if (e.button !== 0 || !(e.target as HTMLElement).closest('[data-card]')) return;
+    e.preventDefault();
+    this.onCardClick(e);
+  }
+
   private onCardClick(e: Event) {
     const b = (e.target as HTMLElement).closest<HTMLElement>('[data-card]');
     if (!b) return;
@@ -579,6 +623,18 @@ export class Ui {
       case 'go-order': if (this.panel !== 'market') this.open('market'); $('[data-act="order"]', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
       case 'go-ffwd': document.getElementById('ffwd')?.click(); break;
       case 'go-dashboard': window.open('./dashboard.html', '_blank', 'noopener'); break;
+      case 'ch-negotiate': {
+        const c = this.ch;
+        if (!c || this.chBusy) break;
+        const pitch = ($('[name="pitch"]', $('#challenge')) as HTMLInputElement | null)?.value ?? '';
+        this.chBusy = true;
+        this.renderChallenge();
+        void this.negotiateContract(c, pitch).finally(() => {
+          this.chBusy = false;
+          this.render();
+        });
+        break;
+      }
       case 'ch-deliver': {
         const r = this.ch?.deliver();
         if (r) this.toast(r.ok ? r.info ?? 'Delivered' : r.reason, !r.ok);
@@ -676,11 +732,15 @@ export class Ui {
       ['Sink', 'Imports', 'gold paid to the world', -d((l) => l.sinks.imports)],
       ['Sink', 'Upkeep', 'NPC workshops', -d((l) => l.sinks.upkeep)],
     ] as const;
+    const health = economyHealth(st);
     const goods = b ? `${b.toolsWorn} tools worn out · ${b.breadEaten} bread eaten` : '';
     return `
 <div class="grid-3">
   <section class="pcard"><h3>Gold supply · gold</h3>${this.chart('Gold supply', supply, '#e3a83b')}<p class="muted small">${supply.length > 1 ? `${pct(growth, 1)} yesterday` : ''}</p></section>
-  <section class="pcard"><h3>Village price index · day 1 = 100</h3>${this.chart('Price index', idx, '#8db8ff', 100)}<p class="muted small">Range so far: ${idxRange}</p></section>
+  <section class="pcard"><h3>Village price index · day 1 = 100</h3>${this.chart('Price index', idx, '#8db8ff', 100)}<p class="muted small">Range so far: ${idxRange}</p>
+    <h3>Health <span class="txs ${health.status === 'stable' ? 'ok' : health.status === 'collecting' ? '' : 'bad'}">${esc(health.status)}</span></h3>
+    <p class="small">${esc(health.text)}</p>
+    ${health.seasons.length > 1 ? health.seasons.map((x) => `<div class="kvrow small"><span>Season ${x.season} · ${x.days} days</span><span class="mono">index ${x.avgIndex.toFixed(1)} · supply ${pct(x.supplyChange, 1)}</span></div>`).join('') : ''}</section>
   <section class="pcard"><h3>Yesterday's flows · gold</h3>
     ${flows.map(([k, n, why, val]) => `<div class="kvrow"><span><b>${n}</b> <span class="muted small">${why}</span></span><b class="${val >= 0 ? 'up' : 'down'}">${val >= 0 ? '+' : ''}${fmt(val, 0)}</b></div>`).join('')}
     <div class="muted small">Goods sinks so far: ${goods}</div>
@@ -768,6 +828,7 @@ export class Ui {
     <div class="kvrow"><span>Transfer out</span><b class="down">Not allowed</b></div>
     <h3>Memory</h3>
     ${n.memory.length ? n.memory.map((m) => `<div class="mem">· ${esc(m)}</div>`).join('') : '<div class="muted small">nothing yet</div>'}
+    ${this.me && def.produces.length && id !== 'bruno' ? `<div class="mem small"><b>About you:</b> ${esc(regardBps(v, id, this.me.id).why)}</div>` : ''}
     <h3>Deals with other agents</h3>
     ${(v.s.deals ?? []).filter((d) => (d.buyer === id || d.seller === id) && d.day >= v.day - 1).slice(-2).reverse().map((d) => `<div class="deal-mini ${d.status}">
       <div class="small"><b>${esc(NPC_DEFS[d.buyer].name)}</b> buys ${esc(d.item)} from <b>${esc(NPC_DEFS[d.seller].name)}</b> · day ${d.day} · <span class="muted">${esc(d.by)}</span> · ${d.status === 'agreed' ? `<b class="up">${fmt(d.price!, 2)}</b>` : '<b class="down">no deal</b>'}</div>

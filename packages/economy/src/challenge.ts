@@ -44,8 +44,11 @@ export const CHALLENGES: Record<ChallengeLevel, ChallengeSpec> = {
 /** One player action, at the tick it happened (enough to replay the round exactly). */
 export interface ChallengeMove {
   tick: number;
-  action: Action | { type: 'deliver_contract' };
+  action: Action | { type: 'deliver_contract' } | { type: 'contract_price'; price: number; by: string; say: string };
 }
+
+/** The contract price Chloe may agree to, around the wheat price when the round starts. */
+export const CONTRACT_BAND = { min: 10_500, max: 13_500 } as const;
 
 export interface ChallengeResult {
   level: ChallengeLevel;
@@ -71,7 +74,12 @@ export class Challenge {
   readonly moves: ChallengeMove[] = [];
   readonly startTick: number;
   readonly endTick: number;
-  readonly contractPrice: number;
+  contractPrice: number;
+  /** wheat mid price when the round started (the contract band is around it) */
+  readonly contractMid: number;
+  /** who set the contract price: the spec's default, or a negotiation (model or rules) */
+  contractBy = 'default';
+  contractSay = '';
   readonly startWorth: number;
   delivered: { tick: number; tx?: string } | null = null;
   private shocked = false;
@@ -90,7 +98,8 @@ export class Challenge {
     this.startTick = this.v.s.tick;
     this.endTick = this.startTick + this.spec.days * 24 - 6; // 18:00 on the last day
     const c = this.spec.contract;
-    this.contractPrice = Math.round(midPrice(c.item, this.v.s.market.stock[c.item]) * c.premiumBps / 10_000);
+    this.contractMid = midPrice(c.item, this.v.s.market.stock[c.item]);
+    this.contractPrice = Math.round(this.contractMid * c.premiumBps / 10_000);
     this.startWorth = this.worth();
   }
 
@@ -156,6 +165,31 @@ export class Challenge {
     return r;
   }
 
+  /** the prices a negotiation may land on, in centigold */
+  contractRange(): [number, number] {
+    return [Math.ceil(this.contractMid * CONTRACT_BAND.min / 10_000), Math.floor(this.contractMid * CONTRACT_BAND.max / 10_000)];
+  }
+
+  /**
+   * Negotiate the contract price once, before delivering: the price comes from Chloe's
+   * brain (a model on the game server, or rules), inside the contract band. It is recorded as
+   * a move with its source, so the replay uses the same number without asking the model again.
+   */
+  setContractPrice(price: number, by: string, say: string): ActionResult {
+    if (this.over) return { ok: false, reason: 'the round is over' };
+    if (this.delivered) return { ok: false, reason: 'the contract is already delivered' };
+    if (this.contractBy !== 'default') return { ok: false, reason: 'the price was already negotiated' };
+    const [lo, hi] = this.contractRange();
+    const p = Math.round(price);
+    if (!(p >= lo && p <= hi)) return { ok: false, reason: `price ${fmt(p, 2)} is outside the contract band ${fmt(lo, 2)}-${fmt(hi, 2)}` };
+    this.contractPrice = p;
+    this.contractBy = by;
+    this.contractSay = say.slice(0, 200);
+    this.moves.push({ tick: this.v.s.tick, action: { type: 'contract_price', price: p, by, say: this.contractSay } });
+    this.v.feed('quest', `${NPC_DEFS[this.spec.contract.npc].name} (${by}): "${this.contractSay}" · contract now ${fmt(p, 2)} per ${this.spec.contract.item}`, this.spec.contract.npc);
+    return { ok: true, info: `contract price ${fmt(p, 2)}` };
+  }
+
   /** Hand the contract's goods to the NPC; it pays the agreed price from its own gold. */
   deliver(): ActionResult {
     if (this.over) return { ok: false, reason: 'the round is over' };
@@ -214,6 +248,7 @@ export class Challenge {
       .sort((a, b) => Math.abs(b.edge) - Math.abs(a.edge))
       .map((d) => d.text)
       .slice(0, 4);
+    if (this.contractBy !== 'default') decisions.push(`contract price negotiated to ${fmt(this.contractPrice, 2)} (${this.contractBy}${this.contractSay ? `: "${this.contractSay.slice(0, 80)}"` : ''})`);
     if (this.delivered) decisions.push(`day ${Math.floor((this.delivered.tick - this.startTick) / 24) + 1}: contract delivered at ${fmt(this.contractPrice, 2)} each`);
     const score = Math.round((profit / 100 + (this.delivered ? 10 : 0)) * 10) / 10;
     return {
@@ -231,6 +266,7 @@ export function replayChallenge(level: ChallengeLevel, worldDays: WorldDay[], mo
     while (queue.length && queue[0].tick === c.v.s.tick) {
       const m = queue.shift()!;
       if (m.action.type === 'deliver_contract') c.deliver();
+      else if (m.action.type === 'contract_price') c.setContractPrice(m.action.price, m.action.by, m.action.say);
       else c.act(m.action as Action);
     }
     c.step();
@@ -238,3 +274,28 @@ export function replayChallenge(level: ChallengeLevel, worldDays: WorldDay[], mo
   return c.result();
 }
 
+
+/**
+ * Chloe's side of the contract negotiation without a model: she starts from 120% of the
+ * wheat price; a pitch with a number inside the band meets her halfway. Used in the browser
+ * when no game server answers, and on the server when the model is unavailable.
+ */
+export function negotiateContractRules(mid: number, pitch: string): { price: number; say: string } {
+  const lo = Math.ceil(mid * CONTRACT_BAND.min / 10_000);
+  const hi = Math.floor(mid * CONTRACT_BAND.max / 10_000);
+  const base = Math.round(mid * 1.2);
+  const n = /(\d+(?:\.\d+)?)/.exec(pitch);
+  const asked = n ? Math.round(Number(n[1]) * 100) : 0;
+  if (asked >= lo && asked <= hi) {
+    const price = Math.round((asked + base) / 2);
+    return { price, say: `${fmt(asked, 2)}? Let's meet in the middle: ${fmt(price, 2)} a bushel.` };
+  }
+  return { price: base, say: asked ? `I can't do ${fmt(asked, 2)}. ${fmt(base, 2)} a bushel, fixed, whatever the blight does.` : `${fmt(base, 2)} a bushel, fixed, whatever the blight does.` };
+}
+
+/** Clamp a proposed contract price into the band around `mid`. */
+export function clampContractPrice(mid: number, price: number): number {
+  const lo = Math.ceil(mid * CONTRACT_BAND.min / 10_000);
+  const hi = Math.floor(mid * CONTRACT_BAND.max / 10_000);
+  return Math.min(hi, Math.max(lo, Math.round(price)));
+}

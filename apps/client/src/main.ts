@@ -119,7 +119,9 @@ async function boot(name: string, auth: HelloAuth | null) {
       src = new LocalSource(name);
     }
   } else {
-    src = new LocalSource(name, 42, challengeLevel());
+    const local = new LocalSource(name, 42, challengeLevel());
+    if (serverUrl) local.apiBase = serverUrl.replace(/^ws/, 'http').replace(/\/$/, '');
+    src = local;
   }
   document.getElementById('login')!.classList.add('hidden');
   document.body.dataset.mode = src.mode;

@@ -12,6 +12,7 @@ import { Game } from './game.ts';
 import { NpcBrain } from './brain/brain.ts';
 import { DayPlanner } from './brain/planner.ts';
 import { Negotiator } from './brain/negotiator.ts';
+import { negotiateContract } from './brain/contract.ts';
 import { OpenAiCompatible, WithFallback } from './brain/llm.ts';
 import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
 import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
@@ -205,6 +206,8 @@ if (mirror) {
 }
 for (const sig of ['SIGTERM', 'SIGINT'] as const) process.once(sig, () => { store.flush(); process.exit(0); });
 const startedAt = Date.now();
+let lastContractAt = 0;
+const contractCalls = { model: 0, rules: 0 };
 
 const http = createServer((req, res) => {
   res.setHeader('access-control-allow-origin', '*');
@@ -215,6 +218,7 @@ const http = createServer((req, res) => {
       ok: true, commit: (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT ?? 'dev').slice(0, 7), day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
       chainStats: mirror ? { ...mirror.stats, active: mirror.isActive, balances: mirror.balances } : undefined, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
       deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures, sources: negotiator.sources },
+      challengeContracts: contractCalls,
     }));
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));
@@ -227,6 +231,31 @@ const http = createServer((req, res) => {
       playerAccount: (id) => accounts.get(id) ?? null,
       ai: { deals: negotiator.sources, plans: planner ? { model: planner.calls - planner.failures, failed: planner.failures } : undefined, model: llm?.name },
     })));
+  } else if (req.url === '/api/challenge/contract' && req.method === 'POST') {
+    // harvest challenge: Chloe negotiates the contract price on the model (text/plain JSON: no CORS preflight)
+    const now = Date.now();
+    if (now - lastContractAt < 2000) {
+      res.statusCode = 429;
+      res.end('{"error":"one negotiation every 2 seconds"}');
+      return;
+    }
+    lastContractAt = now;
+    let body = '';
+    req.on('data', (c) => { body += c; if (body.length > 2000) req.destroy(); });
+    req.on('end', () => {
+      let q: { mid?: unknown; pitch?: unknown } = {};
+      try { q = JSON.parse(body); } catch { /* empty */ }
+      const mid = Math.round(Number(q.mid));
+      if (!(mid > 0 && mid < 100_000)) {
+        res.statusCode = 400;
+        res.end('{"error":"mid price missing"}');
+        return;
+      }
+      void negotiateContract(llm, mid, typeof q.pitch === 'string' ? q.pitch : '').then((r) => {
+        contractCalls[r.by.startsWith('rules') ? 'rules' : 'model']++;
+        res.end(JSON.stringify(r));
+      });
+    });
   } else if (req.url === '/api/state') {
     res.end(JSON.stringify(v.snapshot()));
   } else {

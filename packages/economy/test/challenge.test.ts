@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Challenge, replayChallenge, RULES, NPCS, g, type ChallengeLevel, type WorldDay } from '../src/index.ts';
+import { Challenge, replayChallenge, negotiateContractRules, RULES, NPCS, g, type ChallengeLevel, type WorldDay } from '../src/index.ts';
 import replay from '../../../data/world/replay-kansas-heatwave.json' with { type: 'json' };
 
 const days = (replay as unknown as { days: WorldDay[] }).days;
@@ -75,3 +75,29 @@ describe('3-day harvest challenge', () => {
     expect(v.goldSupply()).toBe(genesis + L.faucets.exports + L.faucets.adventurers + L.faucets.quests + L.faucets.signup - (L.sinks.feeBurn + L.sinks.imports + L.sinks.upkeep));
   });
 });
+
+describe('negotiating the contract', () => {
+  it('a negotiated price changes the payout, stays in the band, and replays without asking again', () => {
+    const c = new Challenge('normal', days);
+    const [lo, hi] = c.contractRange();
+    expect(c.setContractPrice(hi + 50, 'NEAR AI Cloud', 'too much').ok).toBe(false);
+    expect(c.setContractPrice(hi, 'NEAR AI Cloud', 'You drive a hard bargain.').ok).toBe(true);
+    expect(c.setContractPrice(lo, 'rules', 'again').ok).toBe(false); // once per round
+    while (!c.over) {
+      buyEarlyDeliver(c);
+      c.step();
+    }
+    const r = c.result();
+    expect(r.decisions.join(' ')).toMatch(/negotiated .* \(NEAR AI Cloud/);
+    expect(replayChallenge('normal', days, c.moves)).toEqual(r);
+    const plain = play('normal', buyEarlyDeliver).result();
+    expect(r.profit).toBeGreaterThan(plain.profit);
+  });
+
+  it('rules meet a pitch in the band halfway', () => {
+    const r = negotiateContractRules(210, 'I can do 2.80');
+    expect(r.price).toBe(Math.round((280 + 252) / 2));
+    expect(negotiateContractRules(210, 'give me 9.99').price).toBe(252);
+  });
+});
+

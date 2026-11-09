@@ -3,6 +3,7 @@ import { fmt } from './money.ts';
 import { bidPrice, midPrice } from './market.ts';
 import { describePlan } from './plan.ts';
 import type { Village } from './engine.ts';
+import { regardBps } from './regard.ts';
 
 /** Why an NPC asks the price it asks today: the inputs its rules and its brain look at. */
 export interface PriceWhy {
@@ -55,7 +56,7 @@ function planLine(v: Village, id: NpcId): string | undefined {
  * uses: the market curve, the world price and the weather behind it, the NPC's plan dials
  * and today's agent deals. Shown when the player hovers over the NPC.
  */
-export function priceWhy(v: Village, id: NpcId): PriceWhy {
+export function priceWhy(v: Village, id: NpcId, playerId?: string): PriceWhy {
   const def = NPC_DEFS[id];
   const n = v.s.npcs[id];
   const lines: string[] = [];
@@ -101,5 +102,6 @@ export function priceWhy(v: Village, id: NpcId): PriceWhy {
   if (p) lines.push(p);
   lines.push(...dealLines(v, id));
   if (n.hunger > 0) lines.push(`Hungry: gives a little on price for a loaf of bread.`);
+  if (playerId && def.produces.length && id !== 'bruno') lines.push(regardBps(v, id, playerId).why);
   return { head, lines };
 }

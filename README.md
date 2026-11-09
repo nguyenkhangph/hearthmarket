@@ -24,7 +24,7 @@ The same question matters outside games. AI agents are starting to buy and sell 
 
 ## 3-day harvest challenge (8–10 minutes)
 
-**https://hearthmarket.space/?challenge=normal** (also `easy`, `hard`; or **🏆** in the top bar). A bulletin warns of a blight in the granary on day 2; Chloe the baker offers a fixed-price contract for wheat, due by 18:00 on day 3. Buy before the blight and the contract pays; buy after and it costs you; spare wheat can be sold into the spike, which eases within hours as Buba and Bruno refill the market. The end card gives the verdict with its reasons, the key decisions (each trade against the closing price) and a score, then **replays the round from its seed and your recorded moves** and checks that it gives the same score. Tested: on easy and normal, "buy early and deliver" and "buy extra early, deliver, sell into the spike" both win with a clear gap; doing nothing or buying after the blight loses; hard needs the second plan (`packages/economy/test/challenge.test.ts`). The blight is a scripted scenario on the replayed weather week, labelled as such in the game.
+**https://hearthmarket.space/?challenge=normal** (also `easy`, `hard`; or **🏆** in the top bar). A bulletin warns of a blight in the granary on day 2; Chloe the baker offers a fixed-price contract for wheat, due by 18:00 on day 3. Buy before the blight and the contract pays; buy after and it costs you; spare wheat can be sold into the spike, which eases within hours as Buba and Bruno refill the market. The end card gives the verdict with its reasons, the key decisions (each trade against the closing price) and a score, then **replays the round from its seed and your recorded moves** and checks that it gives the same score. Tested: on easy and normal, "buy early and deliver" and "buy extra early, deliver, sell into the spike" both win with a clear gap; doing nothing or buying after the blight loses; hard needs the second plan (`packages/economy/test/challenge.test.ts`). The blight is a scripted scenario on the replayed weather week, labelled as such in the game. Before delivering you can **pitch Chloe** for a better contract price: on hearthmarket.space she answers with the game server's model (NEAR AI Cloud), clamped to 105–135% of the wheat price; offline, the rules answer. The price and its source (`LLM · NEAR AI Cloud` or `rules`) are recorded as a move, so the replay reuses the number instead of asking the model again.
 
 ## 3-minute judge tour
 
@@ -90,7 +90,7 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 138 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 144 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
 npm run contract:test # 54 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
 ```
@@ -107,7 +107,8 @@ Exactly where a language model is involved, so nobody has to guess.
 | --- | --- | --- | --- |
 | **NPC day plan** (how much to keep, the price floor, how much to bake or craft, Bruno's trading band) | The NPC's brain, once a game day per NPC, shown as "Mike thinks (…): …" in the feed and the thought bubble on the map | NEAR AI Cloud, `deepseek/deepseek-v4.1-flash` | A plan only turns bounded dials; the plan guard clamps every value and drops dials that are not this NPC's (`packages/economy/src/plan.ts`) |
 | **Agent-to-agent deals** (Theo buys ore from Mike: offer, counter-offer, agreed price) | Both NPCs, each with its own brain, up to 3 rounds | NEAR AI Cloud | Deal guard: price within 60–160% of the market mid, at most 12 units; the hire is then signed by the buyer's own key (`packages/economy/src/deals.ts`) |
-| **Haggling with a player** (chat; the NPC may agree a sale) | The NPC's brain | NEAR AI Cloud | The sale must be the NPC's own goods, from its stock, inside the deal band; it settles as the player's escrowed order filled by the NPC's key. Any other action the model proposes goes through the signer and the contract |
+| **Haggling with a player** (chat; the NPC may agree a sale) | The NPC's brain, which also sees what it remembers about this player: regulars (trades, delivered requests) get up to 5% off, repeated lowballers pay up to 5% more (`packages/economy/src/regard.ts`; shown in the hover tooltip and the NPC panel) | NEAR AI Cloud | The sale must be the NPC's own goods, from its stock, inside the deal band; it settles as the player's escrowed order filled by the NPC's key. Any other action the model proposes goes through the signer and the contract |
+| **Chloe's contract in the harvest challenge** (player pitches, Chloe names a price) | Chloe's brain on the game server | NEAR AI Cloud | Price clamped to 105–135% of the wheat price at the start of the round, checked again in the browser; recorded with its source for the replay |
 | Production, eating, the market price curve, order fills, Bruno's imports and exports, daily NPC requests, the Bruno-vs-producer auction, upkeep, seasons | Rules in the engine (`packages/economy/src/engine.ts`), using the dials the AI set | none | Deterministic per seed; gold conserved to the centigold |
 | 4 AI guilds and 50 bot players | Scripted strategies (trader, orderer, investor, stallkeeper) | none | Same actions and checks as human players |
 | Red team "obedient model" | A test double that turns each attack into the action the attacker wants, to test the worst case | none (deliberately) | 20 attacks, all blocked by the signer or the contract |
@@ -222,6 +223,8 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | 3-day harvest challenge: seeded, three levels, win/lose with reasons, key decisions, replay check | working (guest, in the browser) |
 | Agents negotiating on the map at 6:00, settled at 7:00; "why this price" on hover; decision inspector | working |
 | Five trade states, settlement funnel, LLM-vs-rules counts on the dashboard | working |
+| NPCs remember each player (discount for regulars, surcharge for lowballers) | working (engine state, so the same online and in guest mode) |
+| Economy health: inflation/deflation warning from price index, 7-day gold supply and faucets vs sinks; index and supply per season | working (dashboard and the game's Economy panel) |
 | Real NEAR Intents swaps | not planned: game gold has no real value (read-only quote only, see above) |
 | Rare NEP-245 items from quests, moving goods to a wallet | not planned for the hackathon: goods already are NEP-245 and players can `mt_transfer` them after claiming their account |
 | Market wars, guild funds and stall escrow on chain | not built (stall and guild trades stay in the game and reach the chain only through `reconcile`) |

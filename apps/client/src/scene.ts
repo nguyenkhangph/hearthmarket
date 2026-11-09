@@ -378,8 +378,8 @@ export class VillageScene extends Phaser.Scene {
   /** The same numbers the engine uses, in words: market stock, world price and weather, plan, deals. */
   private renderWhy() {
     const id = this.whyFor!;
-    const w = priceWhy(this.src.village(), id);
-    this.whyEl.innerHTML = `<div class="wt-head"><b>${escHtml(NPC_DEFS[id].name)}</b> · why this price</div><div>${escHtml(w.head)}</div><ul>${w.lines.slice(0, 5).map((l) => `<li>${escHtml(l)}</li>`).join('')}</ul><div class="muted">Click for the diary and the deals.</div>`;
+    const w = priceWhy(this.src.village(), id, this.src.playerId || undefined);
+    this.whyEl.innerHTML = `<div class="wt-head"><b>${escHtml(NPC_DEFS[id].name)}</b> · why this price</div><div>${escHtml(w.head)}</div><ul>${w.lines.slice(0, 6).map((l) => `<li>${escHtml(l)}</li>`).join('')}</ul><div class="muted">Click for the diary and the deals.</div>`;
   }
 
   // ------------------------------------------------------------------ agents negotiating on the map
