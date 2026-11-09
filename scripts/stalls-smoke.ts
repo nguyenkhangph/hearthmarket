@@ -70,6 +70,17 @@ async function refused(label: string, why: RegExp, who: Account, method: string,
     }
   }
 }
+/**
+ * Payouts are separate receipts that land a few blocks after the transaction returns, and views
+ * read final state, which trails by about two blocks: poll up to ~15 s before calling it a failure.
+ */
+async function eventually(label: string, test: () => Promise<boolean>, detail: () => Promise<string> = async () => '') {
+  for (let i = 0; i < 15; i++) {
+    if (await test().catch(() => false)) return check(label, true);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  check(label, false, await detail().catch(() => ''));
+}
 function check(label: string, cond: boolean, detail = '') {
   if (!cond) failures++;
   console.log(`${cond ? '✓' : '✗'} ${label}${detail ? `  (${detail})` : ''}`);
@@ -103,19 +114,19 @@ const brunoOre = await ore(brunoId);
 await ok('3. Bruno buys the listing', bruno, 'npc_stall_buy', { listing_id: id1, amount: String(price * 3) });
 const l1 = await view<Listing>(stalls, 'get_listing', { listing_id: id1 });
 check('   listing sold to Bruno', l1?.status === 'sold' && l1.buyer === brunoId, JSON.stringify(l1));
-check('   seller paid', (await gold(player)) - sellerGold === BigInt(price * 3), `${(await gold(player)) - sellerGold}`);
-check('   Bruno got the ore', (await ore(brunoId)) - brunoOre === 3);
+await eventually('   seller paid', async () => (await gold(player)) - sellerGold === BigInt(price * 3), async () => `${(await gold(player)) - sellerGold}`);
+await eventually('   Bruno got the ore', async () => (await ore(brunoId)) - brunoOre === 3);
 
 const brunoGold = await gold(brunoId);
 await ok('4. Bruno buys the same listing again (refund expected)', bruno, 'npc_stall_buy', { listing_id: id1, amount: String(price * 3) });
-check('   Bruno got his gold back', (await gold(brunoId)) === brunoGold);
+await eventually('   Bruno got his gold back', async () => (await gold(brunoId)) === brunoGold);
 
 await ok('test player buys 1 ore for the second listing', op, 'relay_market_buy', { player, item: 'ore', qty: 1, max_price: 2000 });
 const ore1 = await ore(player);
 await ok('5. list 1 ore', op, 'relay_stall_list', { player, listing_id: id2, item: 'ore', qty: 1, price: String(price) });
 await ok('   the seller cancels', op, 'relay_stall_cancel', { player, listing_id: id2 });
 check('   listing cancelled', (await view<Listing>(stalls, 'get_listing', { listing_id: id2 }))?.status === 'cancelled');
-check('   ore back with the seller', (await ore(player)) === ore1);
+await eventually('   ore back with the seller', async () => (await ore(player)) === ore1, async () => `has ${await ore(player)}, expected ${ore1}; owed by stalls: ${JSON.stringify(await view(stalls, 'owed_to', { account_id: player }))}`);
 
 await refused('6. withdraw with nothing owed', /nothing to withdraw/, op, 'relay_stall_withdraw', { account_id: stranger });
 
