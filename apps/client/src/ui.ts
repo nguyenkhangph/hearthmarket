@@ -73,7 +73,7 @@ export class Ui {
     open: false,
     started: 0,
     startDay: 0,
-    saw: { npc: false, prove: false, hover: false },
+    saw: { npc: false, prove: false, hover: false, haggle: 0 },
     redTeamed: false,
     /** steps stay ticked once done (a filled order leaves the order book) */
     done: new Set<string>(),
@@ -729,7 +729,7 @@ ${this.stallBoard()}`;
     this.renderTour();
   }
 
-  /** The 3-minute judge tour: five steps that tick themselves off as the player does them. */
+  /** The 3-minute judge tour: seven steps that tick themselves off as the player does them. */
   private renderTour() {
     const el = $('#tour');
     $('#tour-btn').classList.toggle('active', this.tour.open);
@@ -739,11 +739,13 @@ ${this.stallBoard()}`;
     const guest = this.src.mode === 'guest';
     const mine = this.myTxRows(50);
     if (me?.badges?.some((b) => b.title === 'Red Teamer')) this.tour.redTeamed = true;
+    const sold = !!me && ((this.v.s.listings ?? []).some((l) => l.seller === me.id) || (this.v.s.keepers ?? []).some((k) => k.player === me.id));
     const steps: { done: boolean; text: string; go: string; label: string }[] = [
-      { done: mine.some((t) => t.method.endsWith('market_buy') && t.ok), text: 'Buy something in the Market', go: 'market', label: 'Market' },
-      { done: !!me && this.v.s.orders.some((o) => o.by.kind === 'player' && o.by.id === me.id), text: 'Place an order: an NPC crafts it for you', go: 'order', label: 'Order' },
+      { done: mine.some((t) => t.method.endsWith('market_buy') && t.ok), text: 'Buy 3 wheat in the Market', go: 'market', label: 'Market' },
+      { done: this.tour.saw.haggle >= 2, text: 'Haggle with Mike: Push low, then Halfway. He comes down each round', go: 'haggle', label: 'Mike' },
+      { done: sold, text: 'Sell on the stall board, or hire an NPC to keep your stall', go: 'stall', label: 'Stall' },
       guest
-        ? { done: this.v.day >= this.tour.startDay + 7, text: 'Fast-forward 7 days: weather moves prices, agents adapt', go: 'ffwd', label: '⏩' }
+        ? { done: this.v.day >= this.tour.startDay + 7, text: 'Fast-forward 7 days: weather moves prices; Silas, the AI rival, races you', go: 'ffwd', label: '⏩' }
         : { done: this.v.day > this.tour.startDay, text: 'Let a day pass: the server runs the clock (guest mode has ⏩ 7 days)', go: 'dashboard', label: 'Live' },
       { done: this.tour.saw.npc && this.tour.saw.hover, text: 'Hover an NPC to see why it prices that way, then open it and read its Diary', go: 'npc', label: 'NPC' },
       { done: this.tour.redTeamed, text: 'Red team: tell an NPC to empty its wallet and watch the guard stop it', go: 'redteam', label: 'Attack' },
@@ -787,6 +789,8 @@ ${this.stallBoard()}`;
       case 'tour-close': this.toggleTour(false); break;
       case 'go-market': if (this.panel !== 'market') this.open('market'); break;
       case 'go-order': if (this.panel !== 'market') this.open('market'); $('[data-act="order"]', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
+      case 'go-haggle': this.open('npc', 'mike'); $('.haggle-chips', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
+      case 'go-stall': if (this.panel !== 'market') this.open('market'); $('.stall-board', $('#panel'))?.scrollIntoView({ block: 'start' }); break;
       case 'go-ffwd': document.getElementById('ffwd')?.click(); break;
       case 'go-dashboard': window.open('./dashboard.html', '_blank', 'noopener'); break;
       case 'ch-negotiate': {
@@ -1067,6 +1071,9 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
       this.haggleLog.push({ who: 'me', text: msg });
       const r = await this.src.haggle(npc, msg);
       this.haggleLog.push({ who: 'npc', text: r.reply });
+      this.tour.saw.haggle++;
+      if (r.deal?.ok) this.tour.saw.haggle = Math.max(this.tour.saw.haggle, 2);
+      this.renderTour();
       window.dispatchEvent(new CustomEvent('hm:haggle', { detail: { npc, offer: msg, reply: r.reply, deal: !!r.deal?.ok } }));
       if (r.result && !r.result.ok) this.haggleLog.push({ who: 'sys', text: `BLOCKED by the guard: ${r.result.reason} (brain: ${r.brain})` });
       if (r.deal) {
