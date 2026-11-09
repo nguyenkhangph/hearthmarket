@@ -114,6 +114,19 @@ export class VillageScene extends Phaser.Scene {
     this.whyEl = document.getElementById('why-tip')!;
     this.src.onUpdate(() => this.sync());
     this.src.onFeed((e) => this.bubble(e));
+    // a player's haggle, played on the map: their offer, then the NPC's answer, over the NPC
+    const onHaggle = (e: Event) => {
+      const d = (e as CustomEvent<{ npc: NpcId; offer: string; reply: string; deal: boolean }>).detail;
+      if (!this.walkers.has(d.npc)) return;
+      const reply = d.reply.replace(/^[A-Z][a-z]+:\s*/, '').replace(/^"|"$/g, '');
+      this.say(d.npc, `You: ${d.offer.slice(0, 60)}`, 'bubble-talk bubble-me', 1400);
+      window.setTimeout(() => {
+        this.say(d.npc, `${d.deal ? '🤝 ' : ''}${reply.length > 120 ? `${reply.slice(0, 118)}…` : reply}`, d.deal ? 'bubble-talk bubble-deal' : 'bubble-talk', 4200);
+        window.setTimeout(() => { const b = this.bubbles.get(d.npc); if (b?.talk) { b.el.remove(); this.bubbles.delete(d.npc); } }, 4400);
+      }, 1200);
+    };
+    window.addEventListener('hm:haggle', onHaggle);
+    this.events.once('destroy', () => window.removeEventListener('hm:haggle', onHaggle));
     this.sync();
   }
 
@@ -343,7 +356,7 @@ export class VillageScene extends Phaser.Scene {
         if (performance.now() > b.until) {
           b.el.remove();
           this.bubbles.delete(w.id);
-        } else this.placeEl(b.el, s.x, s.y - 36);
+        } else this.placeBubble(b.el, s.x, s.y - 36);
       }
     }
     this.playTalks();
@@ -490,6 +503,15 @@ export class VillageScene extends Phaser.Scene {
     // r is in screen pixels; label offsets are in the host's own (untransformed) pixels
     const k = canvas.offsetWidth ? r.width / canvas.offsetWidth : 1;
     return { x: (r.left - host.left + (x / (MAP_W * TILE)) * r.width) / k, y: (r.top - host.top + (y / (MAP_H * TILE)) * r.height) / k };
+  }
+
+  /** Like placeEl, but kept inside the stage so a long line near the edge stays readable. */
+  private placeBubble(el: HTMLElement, x: number, y: number) {
+    const p = this.toScreen(x, y);
+    const half = el.offsetWidth / 2;
+    const width = this.labels.clientWidth;
+    const cx = width ? Math.min(Math.max(p.x, half + 4), width - half - 4) : p.x;
+    el.style.transform = `translate(${cx}px, ${p.y}px) translate(-50%, -100%)`;
   }
 
   private placeEl(el: HTMLElement, x: number, y: number) {

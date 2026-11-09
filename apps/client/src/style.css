@@ -327,3 +327,46 @@ body[data-mode="online"] #challenge-btn { display: none; }
 .stall-board .row-form input, .stall-board .row-form select { width: 100%; }
 @media (max-width: 640px) { .stall-board .row-form { grid-template-columns: 1fr; } }
 .stall-board .row-form label { display: flex; flex-direction: column; align-items: stretch; gap: 4px; border-bottom: 0; }
+
+/* trade feedback (juice.ts) */
+.juice-float { position: fixed; z-index: 60; transform: translate(-50%, 0); pointer-events: none; font: 700 15px/1 var(--mono, monospace); text-shadow: 0 2px 0 #000a; animation: juice-rise 1.4s ease-out forwards; white-space: nowrap; }
+.juice-float.good { color: #ffd76a; }
+.juice-float.bad { color: #ff9b85; }
+@keyframes juice-rise { 0% { opacity: 0; transform: translate(-50%, 6px) scale(.8); } 15% { opacity: 1; transform: translate(-50%, 0) scale(1.15); } 100% { opacity: 0; transform: translate(-50%, 34px) scale(1); } }
+.juice-coin { position: fixed; z-index: 61; width: 12px; height: 12px; border-radius: 50%; pointer-events: none; background: radial-gradient(circle at 35% 35%, #fff3b0, #f2b632 55%, #a8710f); box-shadow: 0 0 6px #ffcf4d99; }
+#mute { min-width: 32px; padding: 3px 6px; }
+@media (prefers-reduced-motion: reduce) { .juice-float { animation-duration: .01s; } }
+
+/* week goal (goal.ts) */
+#quests .goal { margin: 2px 0 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+#quests .goal-head { display: flex; justify-content: space-between; gap: 6px; font-size: 12.5px; font-weight: 600; }
+#quests .goal .stars span { color: #ffffff30; font-size: 14px; }
+#quests .goal .stars span.on { color: #ffd76a; text-shadow: 0 0 6px #ffcf4d88; }
+#quests .goal-bar { position: relative; height: 7px; margin: 5px 0 3px; border-radius: 4px; background: #ffffff14; overflow: hidden; }
+#quests .goal-bar b { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg, #c98b2b, #ffd76a); border-radius: 4px; transition: width .6s ease; }
+#quests .goal-bar i { position: absolute; top: 0; bottom: 0; width: 1px; background: #0008; }
+#quests .goal-foot { display: flex; justify-content: space-between; color: var(--muted); }
+#quests .goal.over .goal-head span:first-child { color: var(--gold); }
+
+/* stall keeper */
+.stall-board .keeper { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line); }
+.stall-board .keeper h4 { margin: 0 0 4px; font-size: 13px; }
+.stall-board .keeper h4 .face, .keeper-pick .face { width: 18px; height: 18px; vertical-align: -4px; margin-right: 3px; image-rendering: pixelated; }
+.keeper-pick, .keeper-strat { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.keeper-pick button.active, .keeper-strat button.active { outline: 2px solid var(--gold); }
+.keeper-strat button { flex: 1 1 150px; display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 2px; padding: 6px 8px; }
+.keeper-strat button .small { font-size: 11px; line-height: 1.3; }
+.stall-board .kreport { font-size: 12px; margin: 4px 0; padding: 4px 6px; background: #ffffff08; border-radius: 6px; }
+#quests .kline { display: flex; gap: 6px; align-items: flex-start; margin: 0 0 6px; padding: 4px 6px; border-radius: 6px; background: #ffffff0a; cursor: pointer; line-height: 1.3; }
+#quests .kline .face { width: 18px; height: 18px; image-rendering: pixelated; flex: none; }
+#quests .req.big .bigtag { font: 600 10px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: #1e2130; background: #f0c56b; border-radius: 3px; padding: 0 4px; }
+#quests .req.missed { opacity: .65; }
+#quests .req.missed .small { color: #ff9b85; }
+.bubble-me { background: #fdf0c8; border-color: #8a5a12; }
+/* haggle chips */
+.haggle-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 6px 0; }
+.chip-btn { padding: 3px 8px; font-size: 12px; }
+.chip-btn.qty { min-width: 28px; }
+.chip-btn.active { outline: 2px solid var(--gold); }
+.chip-btn.take b { color: var(--up); }
+.chip-btn.low b { color: #ff9b85; }

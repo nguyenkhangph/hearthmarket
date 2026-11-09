@@ -232,6 +232,11 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Real NEAR Intents swaps | not planned: game gold has no real value (read-only quote only, see above) |
 | Rare NEP-245 items from quests, moving goods to a wallet | not planned for the hackathon: goods already are NEP-245 and players can `mt_transfer` them after claiming their account |
 | Stall board: players list goods at their price, NPCs buy listings at 11:00 and 16:00 (crafters when it beats the market's ask, Bruno at 5% under what the market pays) | working (engine, online and guest); on chain through the stalls contract once version 6 is deployed and `STALLS_ONCHAIN=1` (docs/testnet.md, "Upgrade from version 5 to 6") |
+| Week goal in free play: grow your purse (gold + goods at market price) to 3× in 7 days, progress bar, ★ at 1.5× / 2× / 3×, locked when the week ends | working (engine state, online and guest) |
+| Haggling over three rounds: the NPC opens high and comes down each round, round 3 is its last word for the day; lowballs do not move it; price chips (Take / Halfway / Push low) and the exchange as speech bubbles on the map | working (rules and NEAR AI Cloud; the model gets the round, its counter and its floor) |
+| Big orders: every other day an NPC posts a larger order (35% over the market, 8-gold bonus, 3 days). A player accepts it first; delivering in time counts twice in the NPC's memory, missing it raises that NPC's prices for the player by 2% | working; deliveries settle on chain like other requests (`relay_deliver_request`) |
+| Hire a stall keeper: an NPC sells your goods on the stall board for 3 days by the strategy you pick (sell fast / hold the price / wait for a rise when the world says prices go up), takes 5% of each sale, and reports at 20:00 what it sold and why | working (engine); its listings are relayed like the player's own; the commission stays in the game and reaches the chain through `reconcile` |
+| Trade feedback: "+N gold" floating from the purse, coins flying to it, a short synthesised chime (🔊 toggle; respects reduced motion) | working |
 | Market wars and guild funds on chain | not built (guild trades stay in the game and reach the chain only through `reconcile`) |
 
 ## Built during NEAR HACKATHON

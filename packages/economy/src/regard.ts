@@ -14,6 +14,8 @@ export interface Regard {
   delivered: number;
   lowballs: number;
   lastDay: number;
+  /** big orders the player accepted and did not deliver in time */
+  broken?: number;
 }
 
 const empty = (): Regard => ({ trades: 0, volume: 0, delivered: 0, lowballs: 0, lastDay: 0 });
@@ -40,6 +42,13 @@ export function noteDelivery(v: Village, npc: NpcId, playerId: string) {
   touch(v, npc, playerId).delivered++;
 }
 
+/** A promise kept counts twice; a broken one costs 2% on every later price, up to the 5% cap. */
+export function notePromise(v: Village, npc: NpcId, playerId: string, kept: boolean) {
+  const r = touch(v, npc, playerId);
+  if (kept) r.delivered++;
+  else r.broken = (r.broken ?? 0) + 1;
+}
+
 export function noteLowball(v: Village, npc: NpcId, playerId: string) {
   touch(v, npc, playerId).lowballs++;
 }
@@ -50,13 +59,14 @@ export function regardBps(v: Village, npc: NpcId, playerId: string): { bps: numb
   const name = NPC_DEFS[npc].name;
   const loyalty = r.trades + 2 * r.delivered;
   const off = Math.min(500, loyalty * 100);
-  const up = Math.min(500, Math.max(0, r.lowballs - 1) * 150);
+  const up = Math.min(500, Math.max(0, r.lowballs - 1) * 150 + (r.broken ?? 0) * 200);
   const bps = up - off;
-  if (!loyalty && !r.lowballs) return { bps: 0, why: `${name} has not traded with you yet: market price.` };
+  if (!loyalty && !r.lowballs && !r.broken) return { bps: 0, why: `${name} has not traded with you yet: market price.` };
   const parts: string[] = [];
   if (r.trades) parts.push(`${r.trades} trade${r.trades === 1 ? '' : 's'} (${fmt(r.volume, 0)} gold)`);
   if (r.delivered) parts.push(`${r.delivered} request${r.delivered === 1 ? '' : 's'} you delivered`);
   if (r.lowballs) parts.push(`${r.lowballs} lowball offer${r.lowballs === 1 ? '' : 's'}`);
+  if (r.broken) parts.push(`${r.broken} big order${r.broken === 1 ? '' : 's'} you promised and never brought`);
   const eff = bps === 0 ? 'no change' : bps < 0 ? `${(-bps / 100).toFixed(0)}% off for you` : `${(bps / 100).toFixed(1)}% more for you`;
   return { bps, why: `${name} remembers ${parts.join(', ')}: ${eff}.` };
 }

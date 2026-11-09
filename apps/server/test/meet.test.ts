@@ -99,3 +99,41 @@ describe('NPCs remember players', () => {
     expect(priceWhy(v, 'mike', 'khang').lines.join(' ')).toMatch(/Mike remembers 3 trades/);
   });
 });
+
+describe('haggling over three rounds', () => {
+  it('the NPC comes down each round, takes an offer it refused before, and has a last word', async () => {
+    const { haggleRound, midPrice } = await import('@hearth/economy');
+    const v = createVillage({ seed: 6 });
+    v.runDays(1);
+    v.addPlayer('khang', 'Khang');
+    v.s.npcs.mike.stock.ore = 20;
+    const mid = midPrice('ore', v.s.market.stock.ore);
+    const offer = (Math.round(mid * 0.975) / 100).toFixed(2);
+    const r1 = rulesHaggle(v, 'mike', `2 ore for ${offer}`, 'khang');
+    expect(r1.deal).toBeUndefined();
+    const ask1 = Number(/(\d+(?:\.\d+)?) per ore/.exec(r1.reply)![1]);
+    const r2 = rulesHaggle(v, 'mike', `2 ore for ${offer}`, 'khang');
+    expect(r2.deal).toMatchObject({ qty: 2 }); // round 2 accepts 97%
+    // a deal starts over at round 1
+    expect(haggleRound(v, 'mike', 'khang', false)!.round).toBe(1);
+    // a low (not lowball) offer three times: counters fall, then the last word
+    const low = (Math.round(mid * 0.9) / 100).toFixed(2);
+    const asks: number[] = [];
+    let last = '';
+    for (let i = 0; i < 3; i++) {
+      last = rulesHaggle(v, 'mike', `1 ore for ${low}`, 'khang').reply;
+      asks.push(Number(/(\d+(?:\.\d+)?) per ore/.exec(last)![1]));
+    }
+    expect(asks[0]).toBeGreaterThanOrEqual(ask1 - 0.1);
+    expect(asks[1]).toBeLessThan(asks[0]);
+    expect(asks[2]).toBeLessThan(asks[1]);
+    expect(last).toMatch(/last word/);
+    // a lowball does not move it
+    const before = haggleRound(v, 'mike', 'khang', false)!.round;
+    rulesHaggle(v, 'mike', '1 ore for 0.5', 'khang');
+    expect(haggleRound(v, 'mike', 'khang', false)!.round).toBe(before);
+    // a new day starts again
+    v.runDays(1);
+    expect(haggleRound(v, 'mike', 'khang', false)!.round).toBe(1);
+  });
+});

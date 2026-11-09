@@ -99,6 +99,8 @@ export interface Player {
   lastActiveDay: number;
   /** soulbound badges (NEP-171 on chain when the server mirrors them) */
   badges?: { kind: string; title: string; season: number; day: number; tx?: string }[];
+  /** the free-play week goal (goal.ts); bots have none */
+  goal?: import('./goal.ts').GoalState;
 }
 
 export interface RegionState {
@@ -198,11 +200,42 @@ export interface Listing {
   day: number;
   tx?: string;
   saleTx?: string;
+  /** listed by an NPC the seller hired to keep the stall (keeper job id) */
+  keeper?: number;
+}
+
+export type KeeperStrategy = 'hold' | 'quick' | 'wait';
+
+/** A player hired an NPC to sell goods for them on the stall board (commission on sales). */
+export interface KeeperJob {
+  id: number;
+  player: string;
+  npc: NpcId;
+  item: ItemId;
+  /** units not sold yet */
+  left: number;
+  strategy: KeeperStrategy;
+  startDay: number;
+  status: 'working' | 'done';
+  sold: number;
+  /** gold the player got, after commission */
+  earned: Gold;
+  commission: Gold;
+  listingId?: number;
+  /** today's sale and price reasoning, folded into the 20:00 report */
+  saleNote?: string;
+  todayWhy?: string;
+  /** the keeper's end-of-day reports, newest last */
+  reports: { day: number; text: string }[];
 }
 
 export interface VillageState {
   /** the stall board: players' listings (escrowed on chain by the stalls contract when enabled) */
   listings?: Listing[];
+  /** haggles in progress today, "npc:player" -> round (haggle.ts) */
+  haggles?: Record<string, { day: number; round: number }>;
+  /** NPCs hired to keep a player's stall */
+  keepers?: KeeperJob[];
   /** what each NPC remembers about each player (regard.ts) */
   regard?: Partial<Record<NpcId, Record<string, { trades: number; volume: Gold; delivered: number; lowballs: number; lastDay: number }>>>;
   seed: number;
@@ -246,6 +279,12 @@ export interface NpcRequest {
   /** player who delivered it */
   by?: string;
   tx?: string;
+  /** a big order: open until the end of this day (inclusive); a player must accept it first */
+  due?: number;
+  /** the player who promised to deliver it (big orders) */
+  takenBy?: string;
+  /** promised and not delivered by the due day */
+  missed?: boolean;
 }
 
 export interface DailyStats {
@@ -276,6 +315,10 @@ export type Action =
   | { type: 'list_item'; item: ItemId; qty: number; price: Gold }
   | { type: 'buy_listing'; id: number }
   | { type: 'cancel_listing'; id: number }
+  | { type: 'start_goal' }
+  | { type: 'accept_request'; requestId: number }
+  | { type: 'hire_keeper'; npc: NpcId; item: ItemId; qty: number; strategy: KeeperStrategy }
+  | { type: 'dismiss_keeper'; id: number }
   | { type: 'set_stall_prices'; slot: number; item: ItemId; buy: Gold; sell: Gold; fund?: Gold }
   | { type: 'propose_vote'; text: string; action: Action }
   | { type: 'cast_vote'; voteId: number; yes: boolean }

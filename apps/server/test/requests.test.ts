@@ -104,3 +104,47 @@ describe('red team badge', () => {
     expect(game.village.s.players.khang.badges?.filter((x) => x.title === 'Red Teamer')).toHaveLength(1);
   });
 });
+
+describe('big orders (promises)', () => {
+  const bigOrder = (v: Village) => (v.s.requests ?? []).find((r) => r.due !== undefined && !r.by && !r.missed);
+
+  it('must be accepted first, by one player, and a kept promise counts twice', () => {
+    const v = createVillage({ seed: 5 });
+    v.addPlayer('khang', 'Khang');
+    v.addPlayer('lan', 'Lan');
+    let r = bigOrder(v);
+    for (let i = 0; i < 6 && !r; i++) { v.runDays(1); r = bigOrder(v); }
+    expect(r).toBeTruthy();
+    const order = r!;
+    expect(order.due! - order.day).toBe(RULES.bigOrderDays - 1);
+    v.s.players.khang.stock[order.item] = order.qty;
+    expect(v.act({ kind: 'player', id: 'khang' }, { type: 'deliver_request', requestId: order.id }).ok).toBe(false); // not accepted
+    expect(v.act({ kind: 'player', id: 'khang' }, { type: 'accept_request', requestId: order.id }).ok).toBe(true);
+    expect(v.act({ kind: 'player', id: 'lan' }, { type: 'accept_request', requestId: order.id }).ok).toBe(false);
+    v.runDays(1); // still open the next day
+    const npcGold = v.s.npcs[order.npc].gold;
+    v.s.npcs[order.npc].spentToday = 0;
+    const out = v.act({ kind: 'player', id: 'khang' }, { type: 'deliver_request', requestId: order.id });
+    expect(out.ok).toBe(true);
+    expect(npcGold - v.s.npcs[order.npc].gold).toBe(order.price * order.qty);
+    expect(v.s.regard![order.npc]!.khang.delivered).toBe(2);
+    expect(gap(v)).toBe(0);
+  });
+
+  it('a broken promise is remembered and raises that NPC\'s prices for the player', async () => {
+    const { regardBps } = await import('@hearth/economy');
+    const v = createVillage({ seed: 5 });
+    v.addPlayer('khang', 'Khang');
+    let r = bigOrder(v);
+    for (let i = 0; i < 6 && !r; i++) { v.runDays(1); r = bigOrder(v); }
+    expect(v.act({ kind: 'player', id: 'khang' }, { type: 'accept_request', requestId: r!.id }).ok).toBe(true);
+    v.runDays(RULES.bigOrderDays + 1);
+    expect(r!.missed).toBe(true);
+    const reg = regardBps(v, r!.npc, 'khang');
+    expect(reg.bps).toBeGreaterThan(0);
+    expect(reg.why).toMatch(/promised and never brought/);
+    expect(v.s.feed.some((e) => e.text.includes('is upset'))).toBe(true);
+    v.s.players.khang.stock[r!.item] = r!.qty;
+    expect(v.act({ kind: 'player', id: 'khang' }, { type: 'deliver_request', requestId: r!.id }).ok).toBe(false);
+  });
+});

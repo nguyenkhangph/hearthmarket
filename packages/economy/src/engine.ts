@@ -1,5 +1,6 @@
-import { noteDelivery, noteTrade } from './regard.ts';
-import type { Listing } from './types.ts';
+import { noteDelivery, notePromise, noteTrade } from './regard.ts';
+import type { KeeperJob, KeeperStrategy, Listing } from './types.ts';
+import { GOAL, goalTargets, netWorth, starsFor } from './goal.ts';
 import {
   ITEM_DEFS, ITEMS, NPC_DEFS, NPCS, NEAR_CONFIG, RECIPES, RECIPE_YIELD, RULES, AI_GUILDS, QUESTS,
   type ItemId, type NpcId, type QuestId,
@@ -194,6 +195,7 @@ export class Village {
       case 6: this.allNpcs((n) => this.eat(n)); break;
       case 7: this.settleDeals(); break;
       case 8: this.buyInputs(); break;
+      case 9: this.keepersWork(); break;
       case 10: this.fillOrders(); break;
       case 11: this.npcBuyListings(); break;
       case 12: this.produceAll(); break;
@@ -202,7 +204,7 @@ export class Village {
       case 16: this.npcBuyListings(); this.expireListings(); break;
       case 17: this.brunoTrade(); break;
       case 19: this.adventurers(); break;
-      case 20: this.aiTick?.(this); this.tallyVotes(); break;
+      case 20: this.aiTick?.(this); this.tallyVotes(); this.keepersReport(); break;
       case 23: this.closeDay(); break;
     }
     this.wander();
@@ -219,6 +221,7 @@ export class Village {
 
   private startDay() {
     const day = this.day;
+    this.closeGoals(day);
     const prevImpact = Object.fromEntries(this.s.world.regions.map((r) => [r.id, r.impact]));
     this.s.world = applyWorldDay(this.s.world, this.world.next(), day);
     for (const n of Object.values(this.s.npcs)) {
@@ -280,8 +283,11 @@ export class Village {
       const w = pool.splice(Math.floor(this.rng.next() * pool.length), 1)[0];
       if (!picks.some((x) => x.npc === w.npc)) picks.push(w);
     }
-    const keep = (this.s.requests ?? []).filter((r) => r.by && this.day - r.day < 2);
+    this.checkPromises();
+    // delivered ones stay a day for the card; big orders stay open until their due day
+    const keep = (this.s.requests ?? []).filter((r) => (r.by && this.day - r.day < 2) || (r.due !== undefined && !r.by && !r.missed && this.day <= r.due) || (r.missed && this.day - r.due! <= 1));
     this.s.requests = [...keep];
+    this.postBigOrder();
     for (const w of picks) {
       const n = this.s.npcs[w.npc];
       const qty = w.qty[0] + Math.floor(this.rng.next() * (w.qty[1] - w.qty[0] + 1));
@@ -297,9 +303,77 @@ export class Village {
     }
   }
 
+  /**
+   * Every other day one NPC posts a big order: more goods, a 35% premium and a bigger bonus,
+   * open for a few days. A player accepts it first (only one may); delivering in time counts
+   * twice in the NPC's memory, missing the day is remembered and costs 2% on later prices.
+   * Picked from the day number, not the random stream, so seeded runs stay the same.
+   */
+  /** Big orders whose due day passed: a promise not kept is remembered. */
+  private checkPromises() {
+    const day = this.day;
+    for (const r of this.s.requests ?? []) {
+      if (r.due === undefined || r.by || r.missed || day <= r.due) continue;
+      if (r.takenBy) {
+        r.missed = true;
+        notePromise(this, r.npc, r.takenBy, false);
+        const p = this.s.players[r.takenBy];
+        this.feed('quest', `${NPC_DEFS[r.npc].name} waited for ${p?.name ?? 'a player'}'s ${r.qty} ${r.item} and is upset: prices for them go up`, r.npc);
+      }
+    }
+  }
+
+  private postBigOrder() {
+    const day = this.day;
+    if (day % 2 !== 0 || (this.s.requests ?? []).some((r) => r.due !== undefined && !r.by && !r.missed)) return;
+    const orders: { npc: NpcId; item: ItemId; qty: number; why: string }[] = [
+      { npc: 'chloe', item: 'wheat', qty: 10, why: 'for the harvest festival bake' },
+      { npc: 'theo', item: 'ore', qty: 8, why: 'for a caravan of swords' },
+      { npc: 'theo', item: 'timber', qty: 8, why: 'to rebuild the forge roof' },
+      { npc: 'chloe', item: 'wheat', qty: 12, why: 'before winter flour runs short' },
+    ];
+    const o = orders[(day / 2) % orders.length];
+    const n = this.s.npcs[o.npc];
+    const price = Math.round(midPrice(o.item, this.s.market.stock[o.item]) * RULES.bigOrderPremiumBps / 10_000);
+    // the whole order must fit the NPC's daily budget and purse
+    const qty = Math.min(o.qty, Math.floor((NPC_DEFS[o.npc].dailyBudget * 0.9) / price));
+    if (qty < 4 || n.gold < price * qty + g(10)) return;
+    const due = day + RULES.bigOrderDays - 1;
+    const text = `Big order: ${qty} ${o.item} ${o.why}, within ${RULES.bigOrderDays} days`;
+    const r: NpcRequest = { id: this.s.nextId++, npc: o.npc, item: o.item, qty, price, bonus: RULES.bigOrderBonus, day, text, due };
+    (this.s.requests ??= []).push(r);
+    this.feed('quest', `${NPC_DEFS[o.npc].name} posts a big order: ${qty} ${o.item} within ${RULES.bigOrderDays} days · pays ${fmt(price)} each + ${fmt(r.bonus, 0)} bonus · accept it to take it on`, o.npc);
+  }
+
+  // ---------------------------------------------------------------- free-play goal (goal.ts)
+  /** A player's week is over at the start of day startDay + 7: lock the stars. */
+  private closeGoals(day: number) {
+    for (const p of Object.values(this.s.players)) {
+      const st = p.goal;
+      if (!st || st.result || day - st.startDay < GOAL.days) continue;
+      const worth = netWorth(this, p.id);
+      const stars = starsFor(st, worth);
+      st.result = { stars, worth, day };
+      st.best = Math.max(st.best ?? 0, stars);
+      this.feed('quest', `${p.name} finished the week with ${fmt(worth)} gold: ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`);
+    }
+  }
+
   // ---------------------------------------------------------------- stall board (player listings)
   openListings() {
     return (this.s.listings ?? []).filter((l) => l.status === 'open');
+  }
+
+  /** Goods from the seller into escrow (the same relay whether the player or their keeper lists). */
+  private newListing(seller: string, item: ItemId, qty: number, price: Gold, keeper?: KeeperJob): Listing {
+    const p = this.s.players[seller];
+    p.stock[item] -= qty;
+    const l: Listing = { id: this.s.nextId++, seller, item, qty, price, status: 'open', day: this.day, ...(keeper ? { keeper: keeper.id } : {}) };
+    (this.s.listings ??= []).push(l);
+    l.tx = this.tx(playerSigner(seller), 'list_item', { listing_id: l.id, item, qty, price });
+    const by = keeper ? `${NPC_DEFS[keeper.npc].name}, keeping ${p.name}'s stall,` : p.name;
+    this.feed('stall', `${by} lists ${qty} ${item} on the stall board at ${fmt(price, 2)} each`, keeper?.npc, l.tx);
+    return l;
   }
 
   /** The buyer has paid `price × qty` already; the seller gets it, the listing closes. */
@@ -311,23 +385,105 @@ export class Village {
     l.buyer = buyer;
     l.saleTx = tx;
     this.s.ledger.volume += total;
+    const job = l.keeper !== undefined ? this.s.keepers?.find((k) => k.id === l.keeper) : undefined;
+    if (job && seller) {
+      // the keeper's commission, paid by the seller out of the sale
+      const c = Math.round((total * RULES.keeperCommissionBps) / 10_000);
+      seller.gold -= c;
+      this.s.npcs[job.npc].gold += c;
+      this.s.npcs[job.npc].inflowToday += c;
+      job.left -= l.qty;
+      job.sold += l.qty;
+      job.earned += total - c;
+      job.commission += c;
+      job.listingId = undefined;
+      job.saleNote = `sold ${l.qty} ${l.item} at ${fmt(l.price, 2)} to ${buyer.kind === 'npc' ? NPC_DEFS[buyer.id as NpcId].name : this.s.players[buyer.id]?.name ?? 'a player'}`;
+      if (job.left <= 0) job.status = 'done';
+    }
     const who = buyer.kind === 'npc' ? NPC_DEFS[buyer.id as NpcId].name : this.s.players[buyer.id]?.name ?? buyer.id;
     if (buyer.kind === 'npc' && seller) noteTrade(this, buyer.id as NpcId, seller.id, total);
     this.feed('stall', `${who} bought ${seller?.name ?? 'a player'}'s ${l.qty} ${l.item} from the stall board at ${fmt(l.price, 2)} · +${fmt(total)} gold`, buyer.kind === 'npc' ? (buyer.id as NpcId) : undefined, tx);
   }
 
   /** Goods back to the seller (their cancel, or the board clearing old listings). */
-  private cancelListing(l: Listing, why: 'cancelled' | 'expired'): string {
+  private cancelListing(l: Listing, why: 'cancelled' | 'expired' | 'repriced'): string {
     const seller = this.s.players[l.seller];
     if (seller) seller.stock[l.item] += l.qty;
     l.status = 'cancelled';
     const tx = this.tx(playerSigner(l.seller), 'cancel_listing', { listing_id: l.id });
-    this.feed('stall', `${seller?.name ?? 'A player'}'s ${l.qty} ${l.item} ${why === 'expired' ? `went back home after ${RULES.listingDays} days on the board` : 'came off the stall board'}`, undefined, tx);
+    const job = l.keeper !== undefined ? this.s.keepers?.find((k) => k.id === l.keeper) : undefined;
+    if (job && job.listingId === l.id) job.listingId = undefined;
+    if (why !== 'repriced') this.feed('stall', `${seller?.name ?? 'A player'}'s ${l.qty} ${l.item} ${why === 'expired' ? `went back home after ${RULES.listingDays} days on the board` : 'came off the stall board'}`, job?.npc, tx);
     return tx;
   }
 
   private expireListings() {
-    for (const l of this.openListings()) if (this.day - l.day >= RULES.listingDays) this.cancelListing(l, 'expired');
+    for (const l of this.openListings()) if (l.keeper === undefined && this.day - l.day >= RULES.listingDays) this.cancelListing(l, 'expired');
+  }
+
+  // ---------------------------------------------------------------- hired stall keepers
+  /**
+   * The keeper's price for today, and why. quick: just under what Bruno pays, so it sells at
+   * 11:00; hold: the market price, for a crafter who needs it; wait: holds out above the market
+   * while the world says the price is rising, then sells like hold. The last day sells quickly.
+   */
+  keeperPrice(job: KeeperJob): { price: Gold; why: string } {
+    const st = this.s.market.stock[job.item];
+    const mid = midPrice(job.item, st);
+    const bid = bidPrice(job.item, st);
+    const lo = Math.ceil(mid * 0.5), hi = Math.floor(mid * 2);
+    const clampP = (x: number) => Math.max(lo, Math.min(hi, Math.round(x)));
+    const lastDay = this.day - job.startDay >= RULES.keeperDays - 1;
+    const rising = this.s.world.regions.find((r) => r.item === job.item && (r.impact > 0.02 || (r.forecast && r.severity > 0.2)));
+    if (job.strategy === 'quick' || (lastDay && job.strategy !== 'hold')) {
+      return { price: clampP(bid * 0.93), why: lastDay && job.strategy !== 'quick' ? 'last day, so priced to sell to Bruno' : `just under what Bruno pays (${fmt(bid, 2)}), so it goes at 11:00` };
+    }
+    if (job.strategy === 'wait' && rising) {
+      return { price: clampP(mid * 1.12), why: `${rising.name}: ${rising.headline || rising.forecast}; holding out 12% above the market` };
+    }
+    return { price: clampP(mid), why: `at the market price (${fmt(mid, 2)}), for a crafter who needs it` };
+  }
+
+  /** 9:00: each keeper (re)prices its listing before the NPCs look at the board. */
+  private keepersWork() {
+    for (const job of this.s.keepers ?? []) {
+      if (job.status !== 'working') continue;
+      const p = this.s.players[job.player];
+      if (!p) { job.status = 'done'; continue; }
+      if (this.day - job.startDay >= RULES.keeperDays) { this.endKeeper(job, `${RULES.keeperDays} days are up`); continue; }
+      const { price, why } = this.keeperPrice(job);
+      const cur = job.listingId !== undefined ? this.s.listings?.find((l) => l.id === job.listingId && l.status === 'open') : undefined;
+      if (cur && Math.abs(cur.price - price) <= cur.price * 0.03) { job.todayWhy = `kept ${fmt(cur.price, 2)}: ${why}`; continue; }
+      if (cur) this.cancelListing(cur, 'repriced');
+      const qty = Math.min(job.left, p.stock[job.item], RULES.listingMaxQty);
+      if (qty <= 0) { this.endKeeper(job, 'nothing left to sell'); continue; }
+      job.listingId = this.newListing(p.id, job.item, qty, price, job).id;
+      job.todayWhy = `${cur ? 'repriced' : 'listed'} at ${fmt(price, 2)}: ${why}`;
+    }
+  }
+
+  private endKeeper(job: KeeperJob, why: string) {
+    const cur = job.listingId !== undefined ? this.s.listings?.find((l) => l.id === job.listingId && l.status === 'open') : undefined;
+    if (cur) this.cancelListing(cur, 'cancelled');
+    job.status = 'done';
+    const name = NPC_DEFS[job.npc].name;
+    const text = `${name} closed your stall (${why}): sold ${job.sold} ${job.item}, you got ${fmt(job.earned)} gold after ${fmt(job.commission)} commission${job.left > 0 ? `; ${job.left} came back to you` : ''}.`;
+    job.reports.push({ day: this.day, text });
+    this.feed('stall', text, job.npc);
+  }
+
+  /** 20:00: what each keeper sold today, and why it priced that way. */
+  private keepersReport() {
+    for (const job of this.s.keepers ?? []) {
+      if (job.status !== 'working' && !job.saleNote) continue;
+      const name = NPC_DEFS[job.npc].name;
+      const parts = [job.saleNote ? `${job.saleNote}.` : 'No sale today.', job.todayWhy ? `Price: ${job.todayWhy}.` : ''];
+      if (job.status === 'done' && job.left <= 0) parts.push(`All sold: ${fmt(job.earned)} gold for you, ${fmt(job.commission)} for me.`);
+      else parts.push(`${job.left} ${job.item} left.`);
+      job.reports.push({ day: this.day, text: `${name}: ${parts.filter(Boolean).join(' ')}` });
+      if (job.reports.length > 8) job.reports.shift();
+      job.saleNote = undefined;
+    }
   }
 
   /**
@@ -347,7 +503,9 @@ export class Village {
         return missing > 0 && l.qty <= missing + 2 && l.price < ask && n.gold - total >= RULES.npcListingReserve;
       });
       const brunoBuys = l.price <= bid * 0.95 && this.s.npcs.bruno.gold - total >= g(60);
-      const id = crafter ?? (brunoBuys ? 'bruno' : undefined);
+      let id = crafter ?? (brunoBuys ? 'bruno' : undefined);
+      // a keeper never buys the stall it keeps
+      if (id && l.keeper !== undefined && this.s.keepers?.find((k) => k.id === l.keeper)?.npc === id) id = brunoBuys ? 'bruno' : undefined;
       if (!id) continue;
       const n = this.s.npcs[id];
       if (!this.guarded(n, { type: 'market_buy', item: l.item, qty: l.qty, maxPrice: l.price })) continue;
@@ -365,9 +523,11 @@ export class Village {
     }
   }
 
-  /** Open requests a player can still fill today. */
+  /** Open requests a player can still fill today (big orders until their due day). */
   openRequests(): NpcRequest[] {
-    return (this.s.requests ?? []).filter((r) => !r.by && r.day === this.day);
+    return (this.s.requests ?? [])
+      .filter((r) => !r.by && !r.missed && (r.due !== undefined ? this.day <= r.due : r.day === this.day))
+      .sort((a, b) => Number(a.due !== undefined) - Number(b.due !== undefined)); // today's requests first, then big orders
   }
 
   // ---------------------------------------------------------------- npc spending (guarded)
@@ -1221,6 +1381,7 @@ export class Village {
       quests: Object.fromEntries(QUESTS.map((q) => [q.id, false])) as Record<QuestId, boolean>,
       bot, daysActive: 0, lastActiveDay: this.day,
     };
+    if (!bot) p.goal = { startDay: this.day, startWorth: p.gold };
     this.s.players[id] = p;
     this.s.ledger.faucets.signup += p.gold;
     return p;
@@ -1424,11 +1585,7 @@ export class Village {
         if (p.stock[a.item] < a.qty) return { ok: false, reason: `you have ${p.stock[a.item]} ${a.item}` };
         const mine = (this.s.listings ?? []).filter((l) => l.seller === p.id && l.status === 'open').length;
         if (mine >= RULES.listingsPerPlayer) return { ok: false, reason: `at most ${RULES.listingsPerPlayer} open listings` };
-        p.stock[a.item] -= a.qty;
-        const l: Listing = { id: this.s.nextId++, seller: p.id, item: a.item, qty: a.qty, price: a.price, status: 'open', day: this.day };
-        (this.s.listings ??= []).push(l);
-        l.tx = this.tx(signer, 'list_item', { listing_id: l.id, item: a.item, qty: a.qty, price: a.price });
-        this.feed('stall', `${p.name} lists ${a.qty} ${a.item} on the stall board at ${fmt(a.price, 2)} each`, undefined, l.tx);
+        const l = this.newListing(p.id, a.item, a.qty, a.price);
         return { ok: true, tx: l.tx, info: `listed: ${a.qty} ${a.item} at ${fmt(a.price, 2)}` };
       }
       case 'buy_listing': {
@@ -1448,6 +1605,39 @@ export class Village {
         if (!l || l.status !== 'open') return { ok: false, reason: 'that listing is not open' };
         if (l.seller !== p.id) return { ok: false, reason: 'not your listing' };
         return { ok: true, tx: this.cancelListing(l, 'cancelled') };
+      }
+      case 'hire_keeper': {
+        if (!NPCS.includes(a.npc) || a.npc === 'bruno') return { ok: false, reason: 'Bruno buys from the board; hire another NPC' };
+        if (!ITEMS.includes(a.item)) return { ok: false, reason: 'unknown item' };
+        if (!(['hold', 'quick', 'wait'] as KeeperStrategy[]).includes(a.strategy)) return { ok: false, reason: 'strategy: hold, quick or wait' };
+        if (!Number.isInteger(a.qty) || a.qty < 1 || a.qty > RULES.listingMaxQty) return { ok: false, reason: `1-${RULES.listingMaxQty} units` };
+        if (p.stock[a.item] < a.qty) return { ok: false, reason: `you have ${p.stock[a.item]} ${a.item}` };
+        if ((this.s.keepers ?? []).some((k) => k.player === p.id && k.status === 'working')) return { ok: false, reason: 'you already have a stall keeper working' };
+        const mine = this.openListings().filter((l) => l.seller === p.id).length;
+        if (mine >= RULES.listingsPerPlayer) return { ok: false, reason: `at most ${RULES.listingsPerPlayer} open listings` };
+        const job: KeeperJob = {
+          id: this.s.nextId++, player: p.id, npc: a.npc, item: a.item, left: a.qty, strategy: a.strategy, startDay: this.day,
+          status: 'working', sold: 0, earned: 0, commission: 0, reports: [],
+        };
+        (this.s.keepers ??= []).push(job);
+        const { price, why } = this.keeperPrice(job);
+        job.listingId = this.newListing(p.id, a.item, a.qty, price, job).id;
+        job.todayWhy = `listed at ${fmt(price, 2)}: ${why}`;
+        const name = NPC_DEFS[a.npc].name;
+        job.reports.push({ day: this.day, text: `${name}: I'll keep your stall for ${RULES.keeperDays} days, ${a.strategy === 'quick' ? 'selling fast' : a.strategy === 'wait' ? 'waiting for a better price when the world says it is rising' : 'at the market price'}. ${RULES.keeperCommissionBps / 100}% of each sale is mine. Listed at ${fmt(price, 2)}: ${why}.` });
+        noteTrade(this, a.npc, p.id, 0);
+        return { ok: true, info: `${name} keeps your stall: ${a.qty} ${a.item} at ${fmt(price, 2)}` };
+      }
+      case 'dismiss_keeper': {
+        const job = (this.s.keepers ?? []).find((k) => k.id === a.id && k.player === p.id && k.status === 'working');
+        if (!job) return { ok: false, reason: 'no stall keeper working for you' };
+        this.endKeeper(job, 'you sent them home');
+        return { ok: true, info: 'Stall keeper dismissed, goods back' };
+      }
+      case 'start_goal': {
+        const best = Math.max(p.goal?.best ?? 0, p.goal?.result?.stars ?? 0);
+        p.goal = { startDay: this.day, startWorth: netWorth(this, p.id), ...(best ? { best } : {}) };
+        return { ok: true, info: `New week: grow your purse to ${fmt(goalTargets(p.goal)[2], 0)} gold by day ${this.day + GOAL.days - 1}` };
       }
       case 'cancel_order': {
         const o = this.s.orders.find((x) => x.id === a.orderId && x.status === 'open');
@@ -1561,11 +1751,22 @@ export class Village {
         this.tallyVotes();
         return { ok: true };
       }
+      case 'accept_request': {
+        if (p.bot) return { ok: false, reason: 'only players take big orders' };
+        const r = (this.s.requests ?? []).find((x) => x.id === a.requestId);
+        if (!r || r.due === undefined || r.by || r.missed || this.day > r.due) return { ok: false, reason: 'that order is not open' };
+        if (r.takenBy) return { ok: false, reason: r.takenBy === p.id ? 'you already took it' : `${this.s.players[r.takenBy]?.name ?? 'someone'} took it first` };
+        r.takenBy = p.id;
+        const left = r.due - this.day;
+        this.feed('quest', `${p.name} promised ${NPC_DEFS[r.npc].name} ${r.qty} ${r.item} ${left ? `within ${left + 1} days` : 'by tonight'}`, r.npc);
+        return { ok: true, info: `${NPC_DEFS[r.npc].name} counts on you: ${r.qty} ${r.item} ${left ? `in ${left + 1} days` : 'by tonight'}. Late = they remember.` };
+      }
       case 'deliver_request': {
         if (actor.kind !== 'player' || p.bot) return { ok: false, reason: 'only players deliver requests' };
         const r = (this.s.requests ?? []).find((x) => x.id === a.requestId);
-        if (!r || r.day !== this.day) return { ok: false, reason: 'that request has expired' };
+        if (!r || r.missed || (r.due !== undefined ? this.day > r.due : r.day !== this.day)) return { ok: false, reason: 'that request has expired' };
         if (r.by) return { ok: false, reason: `${this.s.players[r.by]?.name ?? 'someone'} already delivered it` };
+        if (r.due !== undefined && r.takenBy !== p.id) return { ok: false, reason: r.takenBy ? `${this.s.players[r.takenBy]?.name ?? 'someone'} took this order` : 'accept the big order first' };
         if (p.stock[r.item] < r.qty) return { ok: false, reason: `you need ${r.qty} ${r.item} (you have ${p.stock[r.item]})` };
         const n = this.s.npcs[r.npc];
         const pay = r.price * r.qty;
@@ -1579,6 +1780,7 @@ export class Village {
         this.s.ledger.faucets.quests += r.bonus;
         r.by = p.id;
         noteDelivery(this, r.npc, p.id);
+        if (r.due !== undefined) notePromise(this, r.npc, p.id, true);
         const tx = this.tx(signer, 'deliver_request', {
           request_id: r.id, npc: NPC_DEFS[r.npc].account, item: r.item, qty: r.qty, price: r.price, bonus: r.bonus,
         });

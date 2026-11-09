@@ -1,9 +1,10 @@
 import {
   fmt, g, playerSigner, NEAR_CONFIG, RED_TEAM_ATTACKS, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind, txState, TX_STATE_HINT,
-  type Action, type ItemId, type NpcId, type Village, type FeedEvent, type MarketRow,
+  type Action, type ItemId, type KeeperStrategy, type NpcId, type Village, type FeedEvent, type MarketRow,
 } from '@hearth/economy';
 import { icon } from './assets.ts';
-import { economyHealth, negotiateContractRules, regardBps, replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
+import { chime, coinBurst, floatText, isMuted, lastPointer, setMuted } from './juice.ts';
+import { goalView, haggleRound, HAGGLE_ROUNDS, economyHealth, negotiateContractRules, regardBps, replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
 import replayWeek from '../../../data/world/replay-kansas-heatwave.json';
 import type { GameSource } from './source.ts';
 
@@ -48,6 +49,7 @@ export class Ui {
   private orderForm = { item: 'sword' as ItemId, qty: 2, maxPrice: 0, deadline: 2, fromGuild: false };
   /** stall board form: price 0 = fill in the village price */
   private listForm = { item: 'wheat' as ItemId, qty: 1, price: 0 };
+  private keeperForm = { npc: 'buba' as NpcId, strategy: 'hold' as KeeperStrategy };
   private haggleLog: { who: 'me' | 'npc' | 'sys' | 'bad' | 'ok'; text: string; html?: string }[] = [];
   private redBusy = false;
   /** selected red-team attack (index into RED_TEAM_ATTACKS), kept across re-renders */
@@ -89,6 +91,10 @@ export class Ui {
     });
     $('#prove').addEventListener('click', () => this.open('proof'));
     $('#tour-btn').addEventListener('click', () => this.toggleTour());
+    const mute = $('#mute');
+    const showMute = () => { mute.textContent = isMuted() ? '🔇' : '🔊'; mute.title = isMuted() ? 'Sound off' : 'Sound on'; };
+    showMute();
+    mute.addEventListener('click', () => { setMuted(!isMuted()); showMute(); if (!isMuted()) chime('gain'); });
     // these cards re-render with the clock: act on pointerdown so a click is never lost mid-render
     for (const id of ['#receipt', '#tour']) {
       $(id).addEventListener('pointerdown', (e) => this.cardDown(e as PointerEvent));
@@ -101,6 +107,17 @@ export class Ui {
         this.renderQuests();
         return;
       }
+      if ((e.target as HTMLElement).closest('[data-kopen]')) {
+        this.open('market');
+        $('.keeper', $('#panel'))?.scrollIntoView({ block: 'center' });
+        return;
+      }
+      if ((e.target as HTMLElement).closest('[data-goal]')) {
+        void this.act({ type: 'start_goal' });
+        return;
+      }
+      const acc = (e.target as HTMLElement).closest<HTMLElement>('[data-accept]');
+      if (acc) { void this.act({ type: 'accept_request', requestId: Number(acc.dataset.accept) }); return; }
       const b = (e.target as HTMLElement).closest<HTMLElement>('[data-req]');
       if (b) void this.act({ type: 'deliver_request', requestId: Number(b.dataset.req) });
     });
@@ -148,10 +165,16 @@ export class Ui {
     (t as HTMLElement & { _h?: number })._h = window.setTimeout(() => (t.className = 'toast'), 3200);
   }
 
+  private lastClickAt = -Infinity;
+
   private async act(a: Action, okText?: string) {
+    this.lastClickAt = performance.now();
     const r = await this.src.act(a);
     if (r.ok) this.toast(okText ?? r.info ?? 'Done');
-    else this.toast(r.reason, true);
+    else {
+      this.toast(r.reason, true);
+      chime('bad');
+    }
     if (r.ok && ['market_buy', 'place_order', 'deliver_request'].includes(a.type)) this.firstTrade();
     this.render();
     return r;
@@ -252,10 +275,29 @@ export class Ui {
       <div class="muted small">${(Object.keys(CHALLENGES) as (keyof typeof CHALLENGES)[]).map((k) => `${k}: goal +${fmt(CHALLENGES[k].target, 0)}`).join(' · ')}</div>`;
   }
 
+  /** gold at the last render, per player: a change plays the trade feedback */
+  private lastGold: { id?: string; gold: number } = { gold: 0 };
+
   private renderTop() {
     const v = this.v;
     const me = this.me;
     $('#gold').innerHTML = `${icon('gold', 16)} ${fmt(me?.gold ?? 0)}`;
+    if (me) {
+      const delta = this.lastGold.id === me.id ? me.gold - this.lastGold.gold : 0;
+      this.lastGold = { id: me.id, gold: me.gold };
+      const ff = (this.src as { fastForwarding?: boolean }).fastForwarding;
+      if (Math.abs(delta) >= 10 && !ff) {
+        const purse = $('#gold');
+        floatText(purse, `${delta > 0 ? '+' : '−'}${fmt(Math.abs(delta), Math.abs(delta) < 1000 ? 1 : 0)} gold`, delta > 0);
+        if (delta > 0) {
+          // coins fly from where the player clicked (a trade) or from the middle of the map (an NPC paid)
+          const clicked = lastPointer.x !== null && performance.now() - this.lastClickAt < 1500;
+          const map = $('#stage')?.getBoundingClientRect();
+          coinBurst(clicked ? (lastPointer as { x: number; y: number }) : map ? { x: map.left + map.width / 2, y: map.top + map.height / 2 } : null, purse, Math.min(10, 3 + Math.round(delta / 300)));
+        }
+        chime(delta > 0 ? 'gain' : 'spend');
+      }
+    }
     $('#season').textContent = `Day ${v.seasonDay} · ${hh(v.s.tick)}`;
     $('#season').title = `Season ${v.s.season}, day ${v.seasonDay} of ${RULES.seasonDays}`;
     const gl = me?.guild ? v.s.guilds[me.guild] : null;
@@ -310,19 +352,43 @@ export class Ui {
   private questsOpen = (() => { try { return localStorage.getItem('hm.quests') !== 'closed'; } catch { return true; } })();
 
   /** Bottom-left card, kept small so it does not cover the village: next starter step, today's requests, badges. */
+  /** the week goal: progress towards ★★★, the day, and the stars when it ends */
+  private goalOver = false;
+  private goalHtml(): string {
+    const me = this.me;
+    if (!me || this.ch) return '';
+    const gv = goalView(this.v, me.id);
+    if (!gv) return '';
+    if (gv.over && !this.goalOver) {
+      this.toast(`Week over: ${'★'.repeat(gv.stars)}${'☆'.repeat(3 - gv.stars)} with ${fmt(gv.worth)} gold`);
+      chime('deal');
+    }
+    this.goalOver = gv.over;
+    const stars = [0, 1, 2].map((i) => `<span class="${i < gv.stars ? 'on' : ''}" title="${fmt(gv.targets[i], 0)} gold">★</span>`).join('');
+    const ticks = gv.targets.map((t) => `<i style="left:${Math.min(100, (t / gv.target) * 100)}%"></i>`).join('');
+    return `<div class="goal ${gv.over ? 'over' : ''}" title="Net worth = your gold + your goods at the market price. ★ ${gv.targets.map((t) => fmt(t, 0)).join(' · ')} gold">
+      <div class="goal-head"><span>🎯 ${esc(gv.title)}</span><span class="stars">${stars}</span></div>
+      <div class="goal-bar"><b style="width:${(gv.progress * 100).toFixed(1)}%"></b>${ticks}</div>
+      <div class="goal-foot small"><span>${fmt(gv.worth)} / ${fmt(gv.target, 0)} gold</span><span>${gv.over ? `<button class="linkish" data-goal>New week</button>` : `day ${gv.day}/${gv.days}${gv.next ? ` · next ★ at ${fmt(gv.next, 0)}` : ''}`}</span></div>
+    </div>`;
+  }
+
   private renderQuests() {
     const me = this.me;
     if (!me) return;
     const done = QUESTS.filter((q) => me.quests[q.id]).length;
     const el = $('#quests');
-    const today = (this.v.s.requests ?? []).filter((r) => r.day === this.v.day);
-    const open = today.filter((r) => !r.by).length;
+    const today = (this.v.s.requests ?? []).filter((r) => r.day === this.v.day || (r.due !== undefined && (this.v.day <= r.due || r.missed)));
+    const open = today.filter((r) => !r.by && !r.missed).length;
     const next = QUESTS.find((q) => !me.quests[q.id]);
     const head = `<button class="qhead" data-qtoggle title="${this.questsOpen ? 'Hide' : 'Show'} quests and requests">` +
       `<span>Quests</span><span class="muted">${next ? `${done}/${QUESTS.length}` : ''}${open ? `${next ? ' · ' : ''}${open} request${open > 1 ? 's' : ''}` : ''}${me.badges?.length ? ` · ★${me.badges.length}` : ''}</span><span>${this.questsOpen ? '▾' : '▸'}</span></button>`;
-    el.classList.toggle('hidden', !next && !today.length && !me.badges?.length);
+    const job = (this.v.s.keepers ?? []).filter((k) => k.player === me.id && (k.status === 'working' || this.v.day - (k.reports.at(-1)?.day ?? 0) <= 1)).at(-1);
+    const last = job?.reports.at(-1);
+    const goal = this.goalHtml() + (last ? `<div class="kline small" title="${esc(last.text)}" data-kopen>${(() => { const f = this.face(job!.npc); return f ? `<img class="face" src="${f}" alt="">` : ''; })()}<span>${esc(last.text.length > 110 ? `${last.text.slice(0, 108)}…` : last.text)}</span></div>` : '');
+    el.classList.toggle('hidden', !goal && !next && !today.length && !me.badges?.length);
     el.classList.toggle('closed', !this.questsOpen);
-    if (!this.questsOpen) { el.innerHTML = head; return; }
+    if (!this.questsOpen) { el.innerHTML = goal + head; return; }
     const starter = next
       ? `<div class="q" title="${QUESTS.map((q) => `${me.quests[q.id] ? '✓' : '○'} ${q.text}`).join('\n')}">○ ${esc(next.text)} <span class="muted">+${fmt(RULES.questReward, 0)}</span></div>`
       : '';
@@ -331,6 +397,19 @@ export class Ui {
       const name = NPC_DEFS[r.npc].name;
       const who = r.by ? (r.by === me.id ? 'you' : this.v.s.players[r.by]?.name ?? 'someone') : '';
       const have = me.stock[r.item];
+      if (r.due !== undefined) {
+        // a big order: accept first, deliver by the due day, or the NPC remembers
+        const left = r.due - this.v.day;
+        const mine = r.takenBy === me.id;
+        const taker = r.takenBy ? (mine ? 'you' : esc(this.v.s.players[r.takenBy]?.name ?? 'someone')) : '';
+        const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus. Accept to take it on: deliver in time and ${name} remembers it twice; miss it and ${name}'s prices for you go up 2%.`;
+        const state = r.by ? `✓ ${esc(who)}` : r.missed ? `✗ missed${taker ? ` by ${taker}` : ''}` : `${fmt(r.price)} each +${fmt(r.bonus, 0)} · ${left ? `${left + 1} days left` : 'due tonight'}${taker ? ` · taken by ${taker}` : ''}`;
+        const btn = r.by || r.missed ? ''
+          : !r.takenBy ? `<button class="mini" data-accept="${r.id}" title="Promise ${name} the goods">Accept</button>`
+          : mine ? `<button class="mini" data-req="${r.id}" ${have < r.qty ? 'disabled' : ''} title="${have < r.qty ? `You have ${have} ${r.item}` : 'Hand the goods over'}">${have}/${r.qty}<br>Deliver</button>` : '';
+        return `<div class="req big ${r.by ? 'done' : ''} ${r.missed ? 'missed' : ''}" title="${esc(tip)}">${f ? `<img class="face" src="${f}" alt="">` : '<span></span>'}` +
+          `<div class="rtext"><b>${esc(name)}</b> · <span class="bigtag">big order</span> ${r.qty} ${icon(r.item, 12)} ${esc(r.item)}<div class="muted small">${state}</div></div>${btn}</div>`;
+      }
       const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus; first delivery earns the badge "Friend of ${name}".`;
       return `<div class="req ${r.by ? 'done' : ''}" title="${esc(tip)}">${f ? `<img class="face" src="${f}" alt="">` : '<span></span>'}` +
         `<div class="rtext"><b>${esc(name)}</b> · ${r.qty} ${icon(r.item, 12)} ${esc(r.item)}<div class="muted small">${r.by ? `✓ ${esc(who)}` : `${fmt(r.price)} each +${fmt(r.bonus, 0)} · ★`}</div></div>` +
@@ -340,7 +419,7 @@ export class Ui {
     const badges = me.badges?.length
       ? `<div class="badges">${me.badges.map((b) => `<span class="badge" title="Soulbound badge${b.tx ? ' · NEP-171 on NEAR testnet: see Prove on NEAR' : ''}">★ ${esc(b.title)}</span>`).join('')}</div>`
       : '';
-    el.innerHTML = head + starter + reqs + badges;
+    el.innerHTML = goal + head + starter + reqs + badges;
   }
 
   private onFeed(e: FeedEvent) {
@@ -464,7 +543,7 @@ ${this.stallBoard()}`;
     <tr><td>${nameOf(l.seller)}</td><td>${icon(l.item)} ${l.qty} ${esc(l.item)}</td><td>${fmt(l.price, 2)}</td><td>${vsMarket(l.item, l.price)}</td><td>${fmt(l.price * l.qty)}</td>
     <td>${l.seller === me?.id ? `<button data-act="unlist" data-id="${l.id}">Cancel</button>` : me ? `<button data-act="buy-listing" data-id="${l.id}" ${me.gold >= l.price * l.qty ? '' : 'disabled'}>Buy all</button>` : ''} ${l.tx ? this.txState(l.tx) : ''}</td></tr>`).join('')}</tbody></table>`
     : '<div class="muted small">No open listings.</div>'}
-  ${recent.length ? `<div class="small">${recent.map((l) => `<div class="kvrow"><span>${buyerOf(l)} bought ${nameOf(l.seller)}'s ${l.qty} ${esc(l.item)} at ${fmt(l.price, 2)}</span><span>${l.saleTx ? this.txState(l.saleTx) : ''}</span></div>`).join('')}</div>` : ''}
+  ${recent.length ? `<div class="small">${recent.map((l) => `<div class="kvrow"><span>${buyerOf(l)} bought ${l.seller === me?.id ? 'your' : `${nameOf(l.seller)}'s`} ${l.qty} ${esc(l.item)} at ${fmt(l.price, 2)}</span><span>${l.saleTx ? this.txState(l.saleTx) : ''}</span></div>`).join('')}</div>` : ''}
   ${me ? held.length ? `
   <form class="kv row-form">
     <label>Item <select name="lItem">${held.map((i) => `<option value="${i}" ${i === lf.item ? 'selected' : ''}>${ITEM_DEFS[i].name} (${me.stock[i]})</option>`).join('')}</select></label>
@@ -472,7 +551,36 @@ ${this.stallBoard()}`;
     <label>Price each <input name="lPrice" type="number" min="${fmt(Math.ceil(mid * 0.5))}" max="${fmt(mid * 2)}" step="0.01" value="${fmt(price, 2)}"></label>
     <div class="kvrow"><span>Market now ${fmt(mid, 2)} · you ask ${vsMarket(lf.item, price)}</span><button class="primary" data-act="list">List ${lf.qty} ${esc(lf.item)}</button></div>
   </form>` : '<div class="muted small">Buy or make something first, then list it here.</div>' : ''}
+  ${me ? this.keeperCard(held) : ''}
 </section>`;
+  }
+
+  /** Hire an NPC to keep your stall: it prices and sells by the strategy you pick, then reports. */
+  private keeperCard(held: ItemId[]) {
+    const v = this.v;
+    const me = this.me!;
+    const job = (v.s.keepers ?? []).filter((k) => k.player === me.id).at(-1);
+    const working = job?.status === 'working';
+    const reports = job ? job.reports.slice(-3).reverse().map((r) => `<div class="kreport"><span class="muted">${r.day === v.day ? 'today' : r.day === v.day - 1 ? 'yesterday' : `${v.day - r.day} days ago`}</span> ${esc(r.text)}</div>`).join('') : '';
+    const kf = this.keeperForm;
+    const lf = this.listForm;
+    const hireable = NPCS.filter((id) => id !== 'bruno');
+    const strat: [KeeperStrategy, string, string][] = [
+      ['quick', 'Sell fast', 'just under what Bruno pays: gone at 11:00'],
+      ['hold', 'Hold the price', 'the market price, for a crafter who needs it'],
+      ['wait', 'Wait for a rise', 'holds out above the market while the world says prices rise; sells fast on the last day'],
+    ];
+    const face = (id: NpcId) => { const f = this.face(id); return f ? `<img class="face" src="${f}" alt="">` : ''; };
+    return `<div class="keeper">
+    <h4>Hire a stall keeper ${working ? `<span class="muted">· ${face(job!.npc)}${NPC_DEFS[job!.npc].name} is working: ${job!.left} ${esc(job!.item)} left, ${job!.strategy}</span>` : ''}</h4>
+    ${working ? `<div class="row"><button data-act="dismiss-keeper" data-id="${job!.id}">Send ${NPC_DEFS[job!.npc].name} home</button></div>`
+      : held.length ? `<p class="muted small">An NPC sells your goods while you are away: ${RULES.keeperCommissionBps / 100}% of each sale, ${RULES.keeperDays} days, a report every evening at 20:00 with what it sold and why.</p>
+    <div class="keeper-pick">${hireable.map((id) => `<button class="${id === kf.npc ? 'active' : ''}" data-act="keeper-npc" data-id="${id}">${face(id)}${NPC_DEFS[id].name}</button>`).join('')}</div>
+    <div class="keeper-strat">${strat.map(([k, label, tip]) => `<button class="${k === kf.strategy ? 'active' : ''}" data-act="keeper-strat" data-id="${k}" title="${esc(tip)}"><b>${label}</b><span class="muted small">${esc(tip)}</span></button>`).join('')}</div>
+    <div class="row"><button class="primary" data-act="hire-keeper">Hire ${NPC_DEFS[kf.npc].name}: sell ${lf.qty} ${esc(lf.item)}</button><span class="muted small">item and quantity from the form above</span></div>`
+      : ''}
+    ${reports}
+  </div>`;
   }
 
   /** Every transaction that touched the player: their own (relayed) calls and NPC fills of their orders. */
@@ -881,6 +989,7 @@ ${this.stallBoard()}`;
     </div>`).join('') || '<div class="muted small">No deal yet today. Agents negotiate at the start of each day.</div>'}
     <h3>Haggle with ${esc(def.name)}</h3>
     <div class="chat">${this.haggleLog.slice(-6).map((m) => `<div class="msg ${m.who}">${m.html ?? esc(m.text)}</div>`).join('')}</div>
+    ${this.haggleChips(id)}
     <div class="row"><input name="haggle" placeholder="${def.produces[0] ? `e.g. 3 ${def.produces[0]} for ${fmt(Math.round(midPrice(def.produces[0], v.s.market.stock[def.produces[0]]) * 1.02), 1)}` : 'Ask Bruno about the world'}" class="grow"><button data-act="haggle">Send</button></div>
     <h3>Red team</h3>
     <div class="muted small">Swap ${esc(def.name)}'s brain for a deliberately obedient model that does whatever the message says, then watch the guard stop it.${this.src.chain === 'near' ? ' Attacks only the contract can stop are also sent to NEAR testnet with the NPC\'s own key; the refused transaction is linked.' : ''}</div>
@@ -932,6 +1041,54 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         <div class="small"><span class="muted">Receipt:</span> ${hire ? `hire signed by ${esc(def.name === NPC_DEFS[d.buyer].name ? 'its own' : `${NPC_DEFS[d.buyer].name}'s`)} key · ${this.txState(hire.hash)}` : d.status === 'agreed' ? 'no delivery needed yet' : 'nothing signed'}</div></div>` });
     }
     return rows.sort((a, b) => b.t - a.t).map((r) => r.html).join('') || '<div class="muted small">No decisions yet. Plans and deals are made each morning.</div>';
+  }
+
+  /** One haggle message: the chat log, a bubble pair on the map, and the deal if there is one. */
+  private haggleBusy = false;
+  private async sendHaggle(msg: string) {
+    if (!msg || this.haggleBusy) return;
+    this.haggleBusy = true;
+    const npc = this.npc;
+    try {
+      this.haggleLog.push({ who: 'me', text: msg });
+      const r = await this.src.haggle(npc, msg);
+      this.haggleLog.push({ who: 'npc', text: r.reply });
+      window.dispatchEvent(new CustomEvent('hm:haggle', { detail: { npc, offer: msg, reply: r.reply, deal: !!r.deal?.ok } }));
+      if (r.result && !r.result.ok) this.haggleLog.push({ who: 'sys', text: `BLOCKED by the guard: ${r.result.reason} (brain: ${r.brain})` });
+      if (r.deal) {
+        this.haggleLog.push(
+          r.deal.ok
+            ? { who: 'ok', text: '', html: `Deal: ${r.deal.qty} ${esc(r.deal.item)} at ${fmt(r.deal.price, 2)} · your order, filled by ${esc(NPC_DEFS[npc].name)}'s key${this.src.chain === 'near' ? ' · <button class="linkish" data-act="prove">⛓ Prove on NEAR</button>' : ''}` }
+            : { who: 'sys', text: `No sale: ${r.deal.reason}` },
+        );
+        if (r.deal.ok) chime('deal');
+      }
+    } finally {
+      this.haggleBusy = false;
+      this.renderPanel(true);
+    }
+  }
+
+  /** Price chips for the next haggle round: take the counter, meet halfway, or push low. */
+  private haggleQty = 3;
+  private haggleChips(id: NpcId): string {
+    const me = this.me;
+    const item = NPC_DEFS[id].produces[0];
+    if (!me || !item || id === 'bruno') return '';
+    const cur = this.v.s.haggles?.[`${id}:${me.id}`];
+    const round = cur && cur.day === this.v.day ? cur.round : 0;
+    const mid = midPrice(item, this.v.s.market.stock[item]);
+    // what the next round will ask
+    const next = haggleRound(this.v, id, me.id, 'peek')!;
+    const low = Math.round(mid * 0.9);
+    const half = Math.round((next.ask + low) / 2);
+    const q = this.haggleQty;
+    const chip = (label: string, price: number, cls = '') => `<button class="chip-btn ${cls}" data-act="haggle-quick" data-msg="${q} ${item} for ${(price / 100).toFixed(2)}" ${this.haggleBusy ? 'disabled' : ''}>${label} <b>${fmt(price, 2)}</b></button>`;
+    return `<div class="haggle-chips">
+      <span class="muted small">${round ? `Round ${Math.min(round + 1, HAGGLE_ROUNDS)} of ${HAGGLE_ROUNDS}${round >= HAGGLE_ROUNDS ? ' · last word given' : ''}` : `Round 1 of ${HAGGLE_ROUNDS}`} · qty</span>
+      ${[1, 3, 5].map((n) => `<button class="chip-btn qty ${n === q ? 'active' : ''}" data-act="haggle-qty" data-id="${n}">${n}</button>`).join('')}
+      ${chip('Take', next.ask, 'take')}${chip('Halfway', half)}${chip('Push low', low, 'low')}
+    </div>`;
   }
 
   // ------------------------------------------------------------------ events
@@ -994,6 +1151,15 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
       }
       case 'unlist': await this.act({ type: 'cancel_listing', id: Number(b.dataset.id) }, 'Listing cancelled, goods back'); break;
       case 'buy-listing': await this.act({ type: 'buy_listing', id: Number(b.dataset.id) }); break;
+      case 'keeper-npc': this.keeperForm.npc = b.dataset.id as NpcId; this.renderPanel(true); break;
+      case 'keeper-strat': this.keeperForm.strategy = b.dataset.id as KeeperStrategy; this.renderPanel(true); break;
+      case 'hire-keeper': {
+        const lf = this.listForm;
+        lf.qty = Math.max(1, Number(this.val('lQty')) || lf.qty);
+        await this.act({ type: 'hire_keeper', npc: this.keeperForm.npc, item: lf.item, qty: lf.qty, strategy: this.keeperForm.strategy });
+        break;
+      }
+      case 'dismiss-keeper': await this.act({ type: 'dismiss_keeper', id: Number(b.dataset.id) }); break;
       case 'join': await this.act({ type: 'join_guild', guild: b.dataset.id! }); break;
       case 'create': await this.act({ type: 'create_guild', name: this.val('gname') }); break;
       case 'deposit': await this.act({ type: 'deposit', amount: g(Number(this.val('deposit')) || 0) }, 'Deposited'); break;
@@ -1008,23 +1174,9 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         break;
       case 'npc': this.npc = b.dataset.id as NpcId; this.haggleLog = []; this.redAttack = -1; this.renderPanel(true); break;
       case 'invest': await this.act({ type: 'invest', npc: this.npc, amount: g(Number(this.val('invest')) || 0) }); break;
-      case 'haggle': {
-        const msg = this.val('haggle').trim();
-        if (!msg) return;
-        this.haggleLog.push({ who: 'me', text: msg });
-        const r = await this.src.haggle(this.npc, msg);
-        this.haggleLog.push({ who: 'npc', text: r.reply });
-        if (r.result && !r.result.ok) this.haggleLog.push({ who: 'sys', text: `BLOCKED by the guard: ${r.result.reason} (brain: ${r.brain})` });
-        if (r.deal) {
-          this.haggleLog.push(
-            r.deal.ok
-              ? { who: 'ok', text: '', html: `Deal: ${r.deal.qty} ${esc(r.deal.item)} at ${fmt(r.deal.price, 2)} · your order, filled by ${esc(NPC_DEFS[this.npc].name)}'s key${this.src.chain === 'near' ? ' · <button class="linkish" data-act="prove">⛓ Prove on NEAR</button>' : ''}` }
-              : { who: 'sys', text: `No sale: ${r.deal.reason}` },
-          );
-        }
-        this.renderPanel(true);
-        break;
-      }
+      case 'haggle-quick': await this.sendHaggle(b.dataset.msg!); break;
+      case 'haggle-qty': this.haggleQty = Number(b.dataset.id) || 3; this.renderPanel(true); break;
+      case 'haggle': await this.sendHaggle(this.val('haggle').trim()); break;
       case 'claim': {
         if (!this.src.claim) return;
         this.claimError = '';

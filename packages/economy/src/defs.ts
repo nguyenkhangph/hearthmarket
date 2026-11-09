@@ -149,6 +149,10 @@ export const RULES = {
   requestsPerDay: 2,
   requestPremiumBps: 12000,
   requestBonus: g(3),
+  // every other day one NPC posts a big order: accept it, deliver within the days, or it remembers
+  bigOrderDays: 3,
+  bigOrderPremiumBps: 13500, // the contract accepts up to 1.5x the market at delivery: leave room for prices to fall
+  bigOrderBonus: g(8),
 
   // stalls
   stallSlots: 4,
@@ -158,6 +162,9 @@ export const RULES = {
   listingsPerPlayer: 5,
   listingDays: 3,
   npcListingReserve: g(30), // a crafter keeps this much gold after buying a listing
+  // a hired stall keeper: commission on what it sells, and how many days it works
+  keeperCommissionBps: 500,
+  keeperDays: 3,
 
   // adventurers buy swords from the world side (a faucet)
   adventurerDemand: [0, 2] as [number, number],
