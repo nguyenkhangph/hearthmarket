@@ -1502,6 +1502,7 @@ export class Village {
       think: plan.why || '(no reason given)',
       act: `plan: ${describePlan(plan)}`,
       guard: notes.length ? `plan guard: ${notes.join('; ')}` : 'plan guard: all dials in range · plans never move gold',
+      by,
     });
     return plan;
   }
@@ -1572,6 +1573,33 @@ export function txKind(tx: string): 'chain' | 'pending' | 'failed' | 'local' | '
   if (tx.startsWith('sim')) return 'sim';
   return 'chain';
 }
+
+/**
+ * Where a transaction stands, in five honest states:
+ * - simulated: the guest village (or a server without chain); nothing was sent
+ * - queued: signed or waiting to be signed; no hash yet
+ * - finalized: executed on NEAR testnet (final within about 2 s), with a hash to check
+ * - failed: refused by the contract or the RPC (a red-team call on purpose, or drift)
+ * - reconciled: kept in the game (nobody online, gas budget, chain behind); the operator's
+ *   daily `reconcile` writes the resulting balances to the chain
+ */
+export type TxState = 'simulated' | 'queued' | 'finalized' | 'failed' | 'reconciled';
+export function txState(tx: string): TxState {
+  switch (txKind(tx)) {
+    case 'pending': return 'queued';
+    case 'failed': return 'failed';
+    case 'local': return 'reconciled';
+    case 'sim': return 'simulated';
+    default: return 'finalized';
+  }
+}
+export const TX_STATE_HINT: Record<TxState, string> = {
+  simulated: 'simulated: guest village, nothing sent',
+  queued: 'queued: on its way to NEAR',
+  finalized: 'on NEAR testnet: executed, final within about 2 s',
+  failed: 'failed: refused on chain',
+  reconciled: 'kept in the game; the daily reconcile writes the balances to the chain',
+};
 
 /** Short label for a tx hash in the feed: `5irr…1Q`, `pending…`, `failed`, `off-chain`, `sim`. */
 export function short(tx: string): string {

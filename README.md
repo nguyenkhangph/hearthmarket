@@ -4,7 +4,7 @@ A pixel-art village where six NPCs run their own businesses, each with its own N
 
 Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
 
-> Status, 3 Nov 2026: the contract (version 4: NEP-141 gold, NEP-171 badges, NEP-245 goods, NPC requests) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
+> Status, 9 Nov 2026: the contract (version 4 on testnet, version 5 in the repo: NEP-141 gold, NEP-171 badges, NEP-245 goods, NPC requests) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
 
 ## The problem
 
@@ -21,6 +21,10 @@ The same question matters outside games. AI agents are starting to buy and sell 
 
 - **Game:** https://hearthmarket.space (mirror: https://hearthmarket.vercel.app) (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
 - **Live economy:** https://hearthmarket.space/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
+
+## 3-day harvest challenge (8–10 minutes)
+
+**https://hearthmarket.space/?challenge=normal** (also `easy`, `hard`; or **🏆** in the top bar). A bulletin warns of a blight in the granary on day 2; Chloe the baker offers a fixed-price contract for wheat, due by 18:00 on day 3. Buy before the blight and the contract pays; buy after and it costs you; spare wheat can be sold into the spike, which eases within hours as Buba and Bruno refill the market. The end card gives the verdict with its reasons, the key decisions (each trade against the closing price) and a score, then **replays the round from its seed and your recorded moves** and checks that it gives the same score. Tested: on easy and normal, "buy early and deliver" and "buy extra early, deliver, sell into the spike" both win with a clear gap; doing nothing or buying after the blight loses; hard needs the second plan (`packages/economy/test/challenge.test.ts`). The blight is a scripted scenario on the replayed weather week, labelled as such in the game.
 
 ## 3-minute judge tour
 
@@ -86,9 +90,9 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 130 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 138 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
-npm run contract:test # 47 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
+npm run contract:test # 54 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).
@@ -108,11 +112,25 @@ Exactly where a language model is involved, so nobody has to guess.
 | 4 AI guilds and 50 bot players | Scripted strategies (trader, orderer, investor, stallkeeper) | none | Same actions and checks as human players |
 | Red team "obedient model" | A test double that turns each attack into the action the attacker wants, to test the worst case | none (deliberately) | 20 attacks, all blocked by the signer or the contract |
 
-When does the model run? Only while someone is playing online or watching the dashboard (60 s window). With nobody there, or if the model fails or times out, the NPCs fall back to the rules, and the feed says which brain decided (`thinks (NEAR AI Cloud)` or `thinks (rules)`). Guest mode runs entirely in the browser and uses the rules only. The model never holds a key and never moves gold itself: it proposes, the guard, the signer's key rules and the contract decide.
+When does the model run? Only while someone is playing online or watching the dashboard (60 s window). Each buyer/seller pair negotiates with the model at most every `NPC_DEAL_MINUTES` (default 4 real minutes); the other mornings that pair deals by rules, and the deal says so. With nobody there, or if the model fails or times out, the NPCs fall back to the rules, and the feed says which brain decided (`thinks (NEAR AI Cloud)` or `thinks (rules)`). The dashboard's **Who decided** card counts deals by the model, by rules and by rules after a model failure since the server started, and lists the latest decisions with their source; in the game, each NPC's **Decision inspector** shows source, input, output, guard and receipt for its plans and deals. Guest mode runs entirely in the browser and uses the rules only. The model never holds a key and never moves gold itself: it proposes, the guard, the signer's key rules and the contract decide.
 
 ### How far NEAR Intents goes
 
 Read-only. The server calls the 1Click API (`GET https://1click.chaindefuser.com/v0/tokens`) every few minutes, reads the USD price of tokenized gold (XAUT), and turns it into a factor on world prices (clamped to 0.9–1.1; e.g. XAUT 3929.34 USD → ×0.967). The factor is posted on chain with the daily world data and shown in the game and on the dashboard. **There are no swaps, no quotes for execution and no deposits**: game gold has no real value and never leaves the game, by design. A real Intents swap would need a token with value, which the game deliberately does not have.
+
+## Trust boundary: what is on chain, and what the operator still does
+
+Plainly, so nobody has to dig:
+
+- **Signed on NEAR by the NPC's own key** (function-call key, its own method list, a daily gold budget in the contract): production, crafting, agent-to-agent hires, market trades, order fills, Bruno's world trades.
+- **Relayed by the operator for wallet-less players**: registration, market buys and sells, orders, request deliveries; badges are minted by the operator. The contract lets the operator trade for registered players, never transfer their gold out.
+- **Kept in the game only**: stall and guild trades, quest rewards, eating, upkeep, adventurers at the inn, and NPC actions skipped while nobody is online, over the gas budget, or held back because the NPC's chain balance was behind. **Market Wars and on-chain guild funds are not built.**
+- **Daily `reconcile`**: once a game day the operator (oracle) writes the game's market stock, treasury and the balances of the NPCs and up to 8 recently active players to the chain. Every change is an `ft_mint`/`ft_burn` with memo `reconcile`; from contract version 5 one summary event per call says how much gold it minted and burned and how many item balances it set.
+- **Claim = out of reconcile (version 5)**: when a Google player reveals their key, the operator calls `relay_self_custody` once; from then on `reconcile` skips that account, and no method undoes it. A player with their own gas can call `self_custody` directly.
+- **Owner and oracle can be separate (version 5)**: `set_oracle` hands reconcile, world data and relays to `ops.<contract>`, so the key on the game server cannot register NPCs or close seasons (`npm run setup:testnet -- --operator-only --split-oracle`).
+- **Still trusted**: the server runs the clock and the rules (the engine is authoritative); the operator decides what `reconcile` writes for accounts not in self-custody. Nothing here is trustless, and the README does not call it that.
+
+**Each trade shows one of five states** in the game (⛓ Prove on NEAR, first-trade card) and in the dashboard's *Settlement funnel*: **simulated** (guest village, nothing sent), **queued** (on its way), **on chain** (executed on testnet, final within about 2 s, explorer link), **failed** (refused, with the reason; red-team calls fail on purpose), **kept in the game · reconciled** (carried by the next `reconcile`). `/api/health` → `chainStats.unsynced` counts what still waits for a reconcile and drops to 0 when one lands.
 
 ## How NEAR is used
 
@@ -184,7 +202,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Public live-economy dashboard (`dashboard.html`, `/api/dashboard`) | working |
 | Agent-to-agent deals: buyer and seller NPCs negotiate the day's price, each with its own brain (NEAR AI Cloud, or rules), inside a deal guard; the engine hires at the agreed price | working |
 | NPC diary (Goal · Saw · Think · Act · Guard) | working; with `NPC_BRAIN=llm` the day plans come from NEAR AI Cloud and pass a plan guard |
-| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 4 (upgraded 1 → 2 with `migrate`, 2 → 3 and 3 → 4 code only) |
+| Contract on testnet (`hearthmarket.testnet`), NPC and operator keys | working: version 4 on testnet (upgraded 1 → 2 with `migrate`, 2 → 3 and 3 → 4 code only); version 5 (trust boundary: `set_oracle`, `self_custody`, reconcile summary) is in the repo and unit-tested, code-only upgrade |
 | NPC actions on chain (produce, craft, hire, market trades, Bruno's world trades), daily `reconcile` and `post_world_data` | working on testnet |
 | Player trades on chain (operator relays for wallet-less players) | working on testnet |
 | Player trades, request deliveries and badges on chain | working on testnet (links in *Live on NEAR testnet*) |
@@ -201,9 +219,12 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Swarm: Bruno bids against the producer for players' raw-goods orders, importing from the world when cheaper; both asks shown in the feed | working (engine; on chain as Bruno's `world_trade` import + `fill_order`) |
 | Trader leaderboard (first name, net worth, account link) on the dashboard; "Your transactions" with links in the Market panel | working |
 | Fast-forward a week in guest mode (⏩ 7 days, about 25 s) | working |
+| 3-day harvest challenge: seeded, three levels, win/lose with reasons, key decisions, replay check | working (guest, in the browser) |
+| Agents negotiating on the map at 6:00, settled at 7:00; "why this price" on hover; decision inspector | working |
+| Five trade states, settlement funnel, LLM-vs-rules counts on the dashboard | working |
 | Real NEAR Intents swaps | not planned: game gold has no real value (read-only quote only, see above) |
 | Rare NEP-245 items from quests, moving goods to a wallet | not planned for the hackathon: goods already are NEP-245 and players can `mt_transfer` them after claiming their account |
-| Market wars, guild funds on chain | planned |
+| Market wars, guild funds and stall escrow on chain | not built (stall and guild trades stay in the game and reach the chain only through `reconcile`) |
 
 ## Built during NEAR HACKATHON
 

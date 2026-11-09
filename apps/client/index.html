@@ -19,6 +19,7 @@
         <h1 id="login-title">A village that runs its own economy</h1>
         <p id="login-lead">Every NPC is an AI agent with its own NEAR account. Real weather in five producing regions moves world prices; Bruno the merchant carries them into the village. Guilds pool gold, back NPCs and compete on returns.</p>
         <button id="guest" class="primary big-btn">Play now as guest</button>
+        <button id="challenge-start" class="big-btn" title="3 game days, about 8 minutes: a blight is coming, a baker needs wheat. Seeded and replayable.">🏆 3-day harvest challenge</button>
         <div id="google-btn"></div>
         <form id="email-form">
           <input id="email" type="email" placeholder="you@email.com" autocomplete="email" />
@@ -41,8 +42,9 @@
         <button data-panel="economy">Economy</button>
         <button data-panel="npc">NPCs</button>
         <a class="navlink" href="./dashboard.html" target="_blank" rel="noopener" title="The live economy and the on-chain proof list">Live ↗</a>
+        <a id="challenge-btn" class="navlink guest-only" href="?challenge=normal" title="3 game days, a blight, a contract: seeded and replayable">🏆</a>
       </nav>
-      <button id="tour-btn" title="A 3-minute tour of what matters: buy, order, fast-forward, the agents' minds, red team, proof">🧭 Tour</button>
+      <button id="tour-btn" class="guest-tour" title="A 3-minute tour of what matters: buy, order, fast-forward, the agents' minds, red team, proof">🧭 Tour</button>
       <button id="prove" title="Every transaction that touched NEAR, with explorer links">⛓ Prove on NEAR</button>
       <div class="spacer"></div>
       <label class="guest-only speed" title="Game speed">
@@ -64,6 +66,7 @@
         <div id="labels"></div>
         <div id="quests" class="card"></div>
         <div id="tour" class="card hidden"></div>
+        <div id="challenge" class="card hidden"></div>
         <div id="receipt" class="card hidden"></div>
         <div id="why-tip" class="why-tip hidden"></div>
         <div id="panel" class="panel hidden"></div>

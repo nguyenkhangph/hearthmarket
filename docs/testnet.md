@@ -196,7 +196,7 @@ Every on-chain call burns a little testnet NEAR from the account that signs it: 
 
 | Setting (`.env`) | Default | What it does |
 | --- | --- | --- |
-| `CHAIN_IDLE_SECONDS` | 120 | Nobody playing (and nobody refreshing the dashboard in the last minute) for this long: NPC actions stay in the engine, nothing is sent, and the agents use rules instead of the model. The first player or dashboard viewer back triggers a fresh `reconcile`. |
+| `CHAIN_IDLE_SECONDS` | 0 (never pause) | Set it above 0 to save gas: nobody playing (and nobody refreshing the dashboard in the last minute) for this long: NPC actions stay in the engine, nothing is sent, and the agents use rules instead of the model. The first player or dashboard viewer back triggers a fresh `reconcile`. |
 | `CHAIN_NPC_TX_PER_HOUR` | 20 | Calls per NPC per real hour. Order fills and player relays are never capped (they move escrow). Skipped actions stay in the engine; `reconcile` re-anchors balances. |
 | `CHAIN_BATCH_PRODUCE` | 1 | A day of production goes on chain as one `produce` per NPC and item. |
 | `CHAIN_DAY_SECONDS` | 600 | Real seconds between two day syncs (`reconcile` + `post_world_data`). |
@@ -297,3 +297,23 @@ The red-team score, the Red Teamer board and the proof list are saved in `STATE_
 3. Deploy. The start log prints `dashboard state: N proofs, red team X/Y (/data/runtime/state.json)`.
 
 Without a volume the server still rebuilds the score from the refusals listed in `data/proof-history.json`.
+
+## Upgrade from version 4 to 5 (trust boundary)
+
+Version 5 adds `set_oracle`, `self_custody` / `relay_self_custody` / `is_self_custody` and one `reconcile` summary event per call. Same stored state, so **no migrate call**.
+
+```powershell
+cd contracts\hearth
+cargo near build non-reproducible-wasm --no-abi
+near contract deploy hearthmarket.testnet use-file target\near\hearth.wasm without-init-call network-config testnet sign-with-keychain send
+near contract call-function as-read-only hearthmarket.testnet get_version json-args '{}' network-config testnet now
+cd ..\..
+# put OWNER_PRIVATE_KEY back in .env for this one step, then:
+npm run setup:testnet -- --operator-only --split-oracle --dry-run
+npm run setup:testnet -- --operator-only --split-oracle
+# remove OWNER_PRIVATE_KEY from .env again
+```
+
+`get_version` must print `"5"`. With `--split-oracle` the script creates `ops.hearthmarket.testnet` (3 NEAR from the contract account, for relay and reconcile gas), calls `set_oracle` with the owner key, deletes the old operator key from the contract account, and writes a new function-call key for `ops.hearthmarket.testnet` (it now includes `relay_self_custody`) into `.env` as `ORACLE_ACCOUNT` and `ORACLE_KEY` (not printed). **Copy both to Railway** (Variables) and redeploy; relays fail until the server has them. The log then says `contract hearthmarket.testnet version 5`, and `get_roles` returns the owner and `ops.hearthmarket.testnet`.
+
+Without `--split-oracle`, `--operator-only` only refreshes the operator key on the contract account; it must be refreshed either way, because the key needs `relay_self_custody`.

@@ -26,6 +26,8 @@ export interface DashboardExtras {
   startedAt: number;
   /** NEAR account of a signed-in player, for the trader board */
   playerAccount?: (playerId: string) => string | null;
+  /** where the agents' decisions came from since the server started */
+  ai?: { deals: { model: number; rules: number; fallback: number }; plans?: { model: number; failed: number }; model?: string };
 }
 
 /**
@@ -98,6 +100,9 @@ export function dashboardView(v: Village, x: DashboardExtras) {
       ? { stats: x.mirror.stats, byMethod: x.mirror.byMethod, events, proofs: [...x.mirror.proofs].reverse(), balances: x.mirror.balances }
       : undefined,
     redTeam: { ...x.redTeam, players: undefined },
+    ai: x.ai,
+    // today's and recent decisions with their source, for the "LLM or rules" table
+    decisions: decisions(v),
     redTeamers: mergeByName(Object.values(x.redTeam.players ?? {})).sort((a, b) => b.blocked - a.blocked || b.runs - a.runs).slice(0, 8),
     traders: traders(v, x.playerAccount),
     deals: (s.deals ?? []).slice(-6).reverse().map((d) => ({
@@ -110,6 +115,24 @@ export function dashboardView(v: Village, x: DashboardExtras) {
 }
 
 export type DashboardView = ReturnType<typeof dashboardView>;
+
+/** The latest agent decisions (day plans and deals) with where they came from. */
+function decisions(v: Village) {
+  const s = v.s;
+  const plans = NPCS.filter((id) => s.npcs[id].plan).map((id) => {
+    const p = s.npcs[id].plan!;
+    return { kind: 'plan' as const, day: p.day, who: NPC_DEFS[id].name, by: p.by, source: sourceOf(p.by), why: p.why ?? '' };
+  });
+  const deals = (s.deals ?? []).slice(-6).map((d) => ({
+    kind: 'deal' as const, day: d.day, who: `${NPC_DEFS[d.buyer].name} ← ${NPC_DEFS[d.seller].name}`, by: d.by, source: sourceOf(d.by),
+    why: d.status === 'agreed' ? `${d.item} at ${(d.price! / 100).toFixed(2)}` : `${d.item}: no deal`,
+  }));
+  return [...deals, ...plans].sort((a, b) => b.day - a.day).slice(0, 12);
+}
+
+/** "llm" only when the words came from a model; a rules fallback says so. */
+export const sourceOf = (by: string): 'llm' | 'rules' | 'fallback' =>
+  /model unavailable|fallback/i.test(by) ? 'fallback' : /^rules/i.test(by) ? 'rules' : 'llm';
 
 /** Human players ranked by net worth (gold + goods at the market mid). First name and account only. */
 function traders(v: Village, account?: (id: string) => string | null) {

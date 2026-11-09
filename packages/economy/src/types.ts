@@ -159,6 +159,8 @@ export interface DiaryEntry {
   act: string;
   tx?: string;
   guard: string;
+  /** who decided: a model name, or "rules" (day plans) */
+  by?: string;
 }
 
 export type FeedKind =

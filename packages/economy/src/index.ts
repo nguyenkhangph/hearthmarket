@@ -22,3 +22,4 @@ export * from './redteam.ts';
 export * from './deals.ts';
 export * from './haggle.ts';
 export * from './why.ts';
+export * from './challenge.ts';

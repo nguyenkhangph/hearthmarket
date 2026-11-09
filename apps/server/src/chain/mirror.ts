@@ -36,6 +36,11 @@ export interface MirrorOptions {
   npcCallsPerHour?: number;
   /** collect each NPC's production over a game day and send it as one `produce` per item */
   batchProduce?: boolean;
+  /**
+   * An NPC whose spendable NEAR (last balance check) is below this keeps its actions in the
+   * game instead of failing on gas; the next reconcile carries them. 0 = off.
+   */
+  minNpcNear?: number;
   /** a slow or offline chain must not stall the village */
   log?: (line: string) => void;
   now?: () => number;
@@ -102,7 +107,19 @@ export class ChainMirror {
   private aliases = new Map<string, string[]>();
   /** false while nobody is playing: NPC actions stay in the engine, no gas is spent */
   private active = true;
-  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0, unsynced: 0 };
+  /**
+   * The settlement funnel. `sent`/`ok`/`failed` are calls that reached the chain. Calls kept in
+   * the game instead (`paused`: nobody online, `budgeted`: over the gas budget, `heldBack`: the
+   * NPC's chain balance was behind) are carried to the chain by the next `reconcile`: `unsynced`
+   * counts those still waiting (back to 0 when a reconcile lands), `reconciled` those it covered.
+   */
+  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0, unsynced: 0, heldBack: 0, reconciled: 0, reconciles: 0 };
+  private keptSinceReconcile = 0;
+  private keepInGame(kind: 'paused' | 'budgeted' | 'heldBack') {
+    this.stats[kind]++;
+    this.keptSinceReconcile++;
+    this.stats.unsynced = this.keptSinceReconcile;
+  }
   /** landed calls per method since the server started */
   readonly byMethod: Record<string, { ok: number; failed: number }> = {};
   /** relays, badges and red-team refusals, newest last (dashboard "proof" list) */
@@ -132,7 +149,7 @@ export class ChainMirror {
   readonly hook = (signer: string, method: string, args: Record<string, unknown>): string | null => {
     const npc = NPCS.some((id) => NPC_DEFS[id].account === signer);
     if (npc && !this.active) {
-      this.stats.paused++;
+      this.keepInGame('paused');
       return null;
     }
     const calls = this.translate(signer, method, args);
@@ -141,11 +158,16 @@ export class ChainMirror {
     // an NPC whose earlier call did not reach the chain holds different goods there than in the
     // game: anything that spends goods would fail, so wait for the next reconcile instead
     if (npc && this.outOfSync(signer, method, args)) {
-      this.stats.unsynced++;
+      this.keepInGame('heldBack');
+      return null;
+    }
+    const near = this.balances[signer];
+    if (npc && this.opts.minNpcNear && near !== undefined && near < this.opts.minNpcNear) {
+      this.keepInGame('budgeted');
       return null;
     }
     if (npc && method !== 'fill_order' && method !== 'world_import' && !this.withinBudget(signer)) {
-      this.stats.budgeted++;
+      this.keepInGame('budgeted');
       this.markDrift(signer);
       return null;
     }
@@ -420,6 +442,19 @@ export class ChainMirror {
     return c;
   }
 
+  /** players who claimed their key: `reconcile` leaves them alone (contract version 5+) */
+  readonly selfCustody = new Set<string>();
+
+  /**
+   * A player exported their key. From now on the operator's daily `reconcile` may not touch
+   * their balances: the contract records it, one-way (`relay_self_custody`, version 5+).
+   */
+  claimed(account: string): string | null {
+    this.selfCustody.add(account);
+    if (this.contractVersion < 5 || !this.opts.operator || !this.registered.has(account)) return null;
+    return this.enqueue([this.op('relay_self_custody', { player: account })], true);
+  }
+
   /** Register a player as soon as they log in, so their first trade is not delayed. */
   registerPlayer(playerId: string): string | null {
     const account = this.opts.playerAccount(playerId);
@@ -449,7 +484,7 @@ export class ChainMirror {
     for (const id of NPCS) for (const i of ITEMS) items.push([NPC_DEFS[id].account, i, s.npcs[id].stock[i]]);
     for (const p of Object.values(s.players).filter((x) => !x.bot).sort((a, b) => b.lastActiveDay - a.lastActiveDay).slice(0, 8)) {
       const acct = this.opts.playerAccount(p.id);
-      if (!acct || !this.registered.has(acct)) continue;
+      if (!acct || !this.registered.has(acct) || this.selfCustody.has(acct)) continue;
       gold.push([acct, String(p.gold)]);
       for (const i of ITEMS) items.push([acct, i, p.stock[i]]);
     }
@@ -462,8 +497,14 @@ export class ChainMirror {
       items,
     });
     // the chain now holds the game's numbers again: NPCs that drifted before this point are clean
+    const kept = this.keptSinceReconcile;
     reconcile.onOk = () => {
       for (const [k, n] of this.drift) if (n <= builtAt) this.drift.delete(k);
+      // what the game kept off chain before this reconcile is now on chain as balances
+      this.stats.reconciled += kept;
+      this.keptSinceReconcile -= Math.min(kept, this.keptSinceReconcile);
+      this.stats.unsynced = this.keptSinceReconcile;
+      this.stats.reconciles++;
     };
     const calls: Call[] = [reconcile];
     if (world) {
@@ -512,7 +553,7 @@ export class ChainMirror {
         const d = this.failedAt.get(c.signer) ?? 0;
         const sellerD = c.method === 'hire' ? this.failedAt.get(String(c.args.seller)) ?? 0 : 0;
         if ((SPENDS_GOODS.has(c.method) || c.method === 'hire') && Math.max(d, sellerD) > queuedAt) {
-          this.stats.unsynced++;
+          this.keepInGame('heldBack');
           throw new HeldBack(`${c.method} held back until the next reconcile`);
         }
         this.stats.sent++;

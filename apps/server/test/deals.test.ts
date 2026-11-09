@@ -117,3 +117,27 @@ describe('agent deals: model credits', () => {
     expect(llm.calls.length).toBeGreaterThan(0);
   });
 });
+
+describe('agent deals: the model is not starved by rules days', () => {
+  it('rules days while nobody is online do not delay the next model deal', async () => {
+    const v = createVillage({ seed: 6 });
+    const llm = new Script(() => ({ accept: true, price: 5, say: 'deal' }));
+    let online = false;
+    let now = 0;
+    const n = new Negotiator(llm, { everyMs: 600_000, useModel: () => online, now: () => now });
+    for (let d = 0; d < 5; d++) { now += 60_000; await n.onNewDay(v); v.runDays(1); }
+    expect(llm.calls).toHaveLength(0);
+    online = true;
+    now += 60_000;
+    await n.onNewDay(v);
+    expect(llm.calls.length).toBeGreaterThan(0);
+    expect(n.sources.model).toBe(dealPairs().length);
+    // inside the cooldown the pairs still deal, by rules, and say so
+    v.runDays(1);
+    now += 60_000;
+    await n.onNewDay(v);
+    expect(v.s.deals!.filter((d) => d.day === v.day).every((d) => d.by === 'rules')).toBe(true);
+    expect(n.sources.rules).toBe(5 * dealPairs().length + dealPairs().length);
+  });
+});
+

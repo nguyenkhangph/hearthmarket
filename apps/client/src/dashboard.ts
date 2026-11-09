@@ -39,6 +39,8 @@ type Dash = {
   feed: { t: number; kind: string; text: string; tx?: string }[];
   traders?: { name: string; worth: number; gold: number; goods: number; badges: number; guild?: string; account?: string }[];
   redTeamers?: { name: string; runs: number; blocked: number; onChain: number }[];
+  ai?: { deals: { model: number; rules: number; fallback: number }; plans?: { model: number; failed: number }; model?: string };
+  decisions?: { kind: 'plan' | 'deal'; day: number; who: string; by: string; source: 'llm' | 'rules' | 'fallback'; why: string }[];
   deals: { day: number; buyer: string; seller: string; item: string; status: string; price?: number; maxQty: number; used: number; by: string; guard: string[]; rounds: { who: string; say: string; price?: number; accept?: boolean }[] }[];
 };
 
@@ -145,6 +147,13 @@ function render(d: Dash) {
 </section>
 
 <section class="card">
+  <h2>Settlement funnel <span class="muted small">every NPC action, where it ended</span></h2>
+  ${oc ? funnel(oc.stats) : '<p class="muted small">No chain on this server.</p>'}
+  <h2>Who decided <span class="muted small">since the server started</span></h2>
+  ${aiCard(d)}
+</section>
+
+<section class="card">
   <h2>World today</h2>
   ${d.world.regions.map((r) => `<div class="region"><div class="sev" style="--s:${Math.min(1, r.severity)}"></div><div><b>${esc(r.name)}</b> <span class="small">${esc(r.headline)}</span>${r.forecast ? `<div class="muted small">forecast: ${esc(r.forecast)}</div>` : ''}</div></div>`).join('')}
   <div class="muted small">Shipping ${pct(d.world.shippingBps / 10_000)} · ${esc(d.world.source)}</div>
@@ -161,7 +170,7 @@ function render(d: Dash) {
     <td>${acct(e.signer, e.signer.split('.')[0])}</td>
     <td class="mono">${esc(e.method)}${e.redTeam ? ' <span class="tag red">red team</span>' : ''}</td>
     <td>${e.ok ? '<span class="up">ok</span>' : `<span class="down">refused</span> <span class="muted small">${esc(e.reason ?? '')}</span>`}</td>
-    <td class="mono">${txLink(e.hash)}</td></tr>`).join('') || '<tr><td class="muted small">No calls since the server started. The chain sleeps while nobody plays: open the village to wake it.</td></tr>'}</tbody></table>`
+    <td class="mono">${txLink(e.hash)}</td></tr>`).join('') || '<tr><td class="muted small">No calls since the server started.</td></tr>'}</tbody></table>`
     : '<p class="muted">This server runs without a chain (CHAIN=mock).</p>'}
 </section>
 
@@ -187,6 +196,39 @@ function render(d: Dash) {
   ${d.feed.map((f) => `<div class="feed-row"><span class="mono muted small">${String(f.t % 24).padStart(2, '0')}:00</span> <span class="small">${esc(f.text)}</span> ${txLink(f.tx)}</div>`).join('')}
   ${d.redTeam.last ? `<h2>Last red-team attack</h2><div class="small">"${esc(d.redTeam.last.attack)}" vs ${esc(d.redTeam.last.npc)}: blocked by the ${esc(d.redTeam.last.layer ?? '?')} ${d.redTeam.last.hash ? `· ${txLink(d.redTeam.last.hash, 'refused tx')}` : ''} <span class="muted">${ago(d.at - d.redTeam.last.at)}</span></div>` : ''}
 </section>`;
+}
+
+const n = (x: number | boolean | undefined) => Number(x ?? 0);
+
+/**
+ * Sent → landed or refused on chain; the rest kept in the game (nobody online, gas budget,
+ * an NPC whose chain balance was behind) and carried to the chain by the daily reconcile.
+ */
+function funnel(st: Record<string, number | boolean>) {
+  const kept = n(st.paused) + n(st.budgeted) + n(st.heldBack);
+  const rows: [string, number, string, string][] = [
+    ['Sent to NEAR', n(st.sent), 'signed and submitted', ''],
+    ['Finalized ok', n(st.ok), 'landed on chain', 'up'],
+    ['Failed', n(st.failed), 'refused by the contract (red team on purpose) or out of goods', 'down'],
+    ['Kept in the game', kept, `${n(st.paused)} nobody online · ${n(st.budgeted)} gas budget · ${n(st.heldBack)} held back`, ''],
+    ['Reconciled', n(st.reconciled), `carried to the chain by ${n(st.reconciles)} reconcile call(s)`, 'up'],
+    ['Waiting for reconcile', n(st.unsynced), 'back to 0 when the next reconcile lands', n(st.unsynced) ? 'down' : 'up'],
+  ];
+  const max = Math.max(1, ...rows.map((r) => r[1]));
+  return rows.map(([k, v, why, cls]) => `<div class="kv small" title="${esc(why)}"><span>${k}<div class="muted small">${esc(why)}</div></span><span class="mono ${cls}">${v}</span></div>${bar(v, max)}`).join('');
+}
+
+function aiCard(d: Dash) {
+  const a = d.ai;
+  if (!a) return '<p class="muted small">No data.</p>';
+  const deals = a.deals.model + a.deals.rules + a.deals.fallback;
+  const share = deals ? Math.round((a.deals.model / deals) * 100) : 0;
+  const tag = (src: string) => `<span class="tag ${src === 'llm' ? '' : 'red'}">${src === 'llm' ? 'LLM' : src === 'fallback' ? 'rules (model failed)' : 'rules'}</span>`;
+  return `<div class="kv small"><span>Agent deals by the model</span><span class="mono">${a.deals.model}/${deals} (${share}%)</span></div>
+  <div class="kv small"><span>Deals by rules · model failed</span><span class="mono">${a.deals.rules} · ${a.deals.fallback}</span></div>
+  ${a.plans ? `<div class="kv small"><span>Day plans by the model · failed</span><span class="mono">${a.plans.model} · ${a.plans.failed}</span></div>` : '<div class="muted small">No model configured: every decision is rules.</div>'}
+  <div class="muted small">The model (${esc(a.model ?? 'none')}) runs only while someone plays or watches; otherwise rules decide, and each decision says which.</div>
+  ${(d.decisions ?? []).slice(0, 8).map((x) => `<div class="kv small"><span>day ${x.day} · ${x.kind} · <b>${esc(x.who)}</b> <span class="muted">${esc(x.why.slice(0, 60))}</span></span>${tag(x.source)}</div>`).join('')}`;
 }
 
 async function tick() {

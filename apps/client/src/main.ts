@@ -1,3 +1,4 @@
+import type { ChallengeLevel } from '@hearth/economy';
 import './style.css';
 import type Phaser from 'phaser';
 import { setContractAccount, type NpcId } from '@hearth/economy';
@@ -9,6 +10,12 @@ import { detectArt } from './fallbackArt.ts';
 const artReady = detectArt();
 
 const params = new URLSearchParams(location.search);
+/** ?challenge=easy|normal|hard: the 3-day harvest challenge (guest, seeded, replayable) */
+function challengeLevel(): ChallengeLevel | undefined {
+  const c = params.get('challenge');
+  if (c === null) return undefined;
+  return c === 'easy' || c === 'hard' ? c : 'normal';
+}
 const serverUrl = params.get('server') ?? (import.meta.env.VITE_SERVER_URL as string | undefined);
 let game: Phaser.Game | null = null;
 /** the village that is running, if any (a guest can still sign in from the top bar) */
@@ -112,7 +119,7 @@ async function boot(name: string, auth: HelloAuth | null) {
       src = new LocalSource(name);
     }
   } else {
-    src = new LocalSource(name);
+    src = new LocalSource(name, 42, challengeLevel());
   }
   document.getElementById('login')!.classList.add('hidden');
   document.body.dataset.mode = src.mode;
@@ -215,4 +222,9 @@ const login = setupLogin();
 if (resume && serverUrl) {
   loginMsg('Signing in…');
   void login.then(() => boot(resume.kind === 'dev' ? resume.email.split('@')[0] : 'player', resume));
-} else if (params.has('guest')) void login.then(() => boot('guest', null));
+} else if (params.has('guest') || params.has('challenge')) void login.then(() => boot('guest', null));
+document.getElementById('challenge-start')!.addEventListener('click', () => {
+  const url = new URL(location.href);
+  url.searchParams.set('challenge', 'normal');
+  location.assign(url.toString());
+});

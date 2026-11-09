@@ -20,7 +20,7 @@ export const config = {
   /** minutes between two day plans for the same NPC (token budget) */
   planEveryMinutes: num(env.NPC_PLAN_MINUTES, 5),
   /** minutes between two LLM negotiations of the same buyer/seller pair (rules negotiate daily) */
-  dealEveryMinutes: num(env.NPC_DEAL_MINUTES, 10),
+  dealEveryMinutes: num(env.NPC_DEAL_MINUTES, 4),
   llm: {
     primary: {
       baseUrl: env.NEAR_AI_BASE_URL || NEAR_AI_DEFAULT_BASE_URL,
@@ -48,8 +48,13 @@ export const config = {
     npcTxPerHour: num(env.CHAIN_NPC_TX_PER_HOUR, 20),
     /** one `produce` per NPC and item per game day instead of one per production tick */
     batchProduce: env.CHAIN_BATCH_PRODUCE !== '0',
-    /** stop mirroring NPC actions this many seconds after the last player leaves (0 = never pause) */
-    idleSeconds: num(env.CHAIN_IDLE_SECONDS, 120),
+    /**
+     * stop mirroring NPC actions this many seconds after the last player leaves (0 = never pause).
+     * Default 0: the chain keeps up with the game while judges look at it. Set 120 to save gas.
+     */
+    idleSeconds: num(env.CHAIN_IDLE_SECONDS, 0),
+    /** an NPC with less spendable NEAR than this keeps its actions in the game (reconciled later) */
+    minNpcNear: num(env.CHAIN_MIN_NPC_NEAR, 0.15),
     /** log a warning when a signing account has less than this much spendable NEAR */
     lowBalanceNear: num(env.CHAIN_LOW_BALANCE_NEAR, 0.1),
     /** red-team attacks sent to the contract on chain (failed txs as proof), per hour, all players */

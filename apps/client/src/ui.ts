@@ -1,8 +1,10 @@
 import {
-  fmt, g, playerSigner, NEAR_CONFIG, RED_TEAM_ATTACKS, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind,
+  fmt, g, playerSigner, NEAR_CONFIG, RED_TEAM_ATTACKS, ITEMS, ITEM_DEFS, NPC_DEFS, NPCS, NPC_KEY_METHODS, QUESTS, RULES, marketView, midPrice, fee, short, txKind, txState, TX_STATE_HINT,
   type Action, type ItemId, type NpcId, type Village, type FeedEvent, type MarketRow,
 } from '@hearth/economy';
 import { icon } from './assets.ts';
+import { replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
+import replayWeek from '../../../data/world/replay-kansas-heatwave.json';
 import type { GameSource } from './source.ts';
 
 type PanelId = 'market' | 'guild' | 'economy' | 'npc' | 'account' | 'proof' | null;
@@ -53,6 +55,8 @@ export class Ui {
   private lastDay = 0;
   private simSummary: string | null = null;
   private proofHistory: ProofEvent[] = [];
+  private ch?: Challenge;
+  private chResult?: { r: ChallengeResult; replayed: boolean };
   private acctHtml = '';
   /** the first trade's receipt card: open until the player closes it */
   private receipt = false;
@@ -102,7 +106,11 @@ export class Ui {
     fetch('sim-summary.json').then((r) => (r.ok ? r.json() : null)).then((j) => { this.simSummary = j?.text ?? null; }).catch(() => {});
     import('../../../data/proof-history.json').then((m) => { this.proofHistory = (m.default as { events: ProofEvent[] }).events; }).catch(() => {});
     const q = new URLSearchParams(location.search);
-    if (q.has('tour') || !LS.get('hm.tour')) this.toggleTour(true);
+    this.ch = (src as { challenge?: Challenge }).challenge;
+    if (this.ch) {
+      (src as { onChallengeEnd?: () => void }).onChallengeEnd = () => this.challengeEnd();
+      $('#challenge').addEventListener('click', (e) => this.onCardClick(e));
+    } else if (q.has('tour') || !LS.get('hm.tour')) this.toggleTour(true);
     this.render();
   }
 
@@ -151,7 +159,61 @@ export class Ui {
     this.renderQuests();
     this.renderReceipt();
     this.renderTour();
+    this.renderChallenge();
     this.renderPanel(false);
+  }
+
+  // ------------------------------------------------------------------ 3-day harvest challenge
+  /** The round's card: the bulletin, the contract, where you stand against the goal. */
+  private renderChallenge() {
+    const c = this.ch;
+    const el = $('#challenge');
+    if (!c) return;
+    el.classList.remove('hidden');
+    if (this.chResult) return; // the end card stays as it is
+    const sp = c.spec;
+    const k = sp.contract;
+    const p = c.player;
+    const worth = c.worth();
+    const d = worth - c.startWorth;
+    const hoursLeft = Math.max(0, c.endTick - c.v.s.tick);
+    el.innerHTML = `
+      <h4>🏆 Harvest challenge <span class="muted">${esc(sp.level)} · seed ${sp.seed}</span></h4>
+      <div class="small">Day ${Math.min(c.day, sp.days)} of ${sp.days} · ${hh(c.v.s.tick)} · <b>${hoursLeft} h left</b> (ends 18:00 day ${sp.days})</div>
+      <ul class="bulletin">${c.bulletin().slice(0, 2).map((l) => `<li>${esc(l)}</li>`).join('')}</ul>
+      <div class="kvrow small"><span>Contract: ${k.qty} ${esc(k.item)} → ${esc(NPC_DEFS[k.npc].name)} at ${fmt(c.contractPrice, 2)}</span>
+        <span>${c.delivered ? '<b class="up">kept ✓</b>' : `you hold ${p.stock[k.item]}/${k.qty} <button class="mini primary" data-card="ch-deliver" ${p.stock[k.item] < k.qty ? 'disabled' : ''}>Deliver</button>`}</span></div>
+      <div class="kvrow small"><span>${esc(k.item)} now</span><span class="mono">${fmt(midPrice(k.item, c.v.s.market.stock[k.item]), 2)}</span></div>
+      <div class="kvrow small"><span>Net worth (goods at what the market pays)</span><span class="mono ${d >= 0 ? 'up' : 'down'}">${fmt(worth)} (${d >= 0 ? '+' : ''}${fmt(d)})</span></div>
+      <div class="kvrow small"><span>Goal</span><span class="mono">contract kept and +${fmt(sp.target, 0)}</span></div>
+      <div class="row"><button class="mini" data-card="go-market">Market</button><button class="mini" data-card="go-ffwd" title="Run the rest of the round quickly">⏩ to the end</button></div>
+      <div class="muted small">Scenario: scripted blight on a replayed weather week. Your moves are recorded; the end card replays them to check the score.</div>`;
+  }
+
+  private challengeEnd() {
+    const c = this.ch!;
+    if (this.chResult) return;
+    const r = c.result();
+    // replay the round from its seed and the recorded moves: it must give the same score
+    const again = replayChallenge(c.spec.level, (replayWeek as { days: WorldDay[] }).days, c.moves);
+    this.chResult = { r, replayed: JSON.stringify(again) === JSON.stringify(r) };
+    const el = $('#challenge');
+    el.classList.add('end');
+    const lv = c.spec.level;
+    const next = lv === 'easy' ? 'normal' : 'hard';
+    el.innerHTML = `
+      <h4>${r.verdict === 'win' ? '🏆 You win' : '✗ Round lost'} <span class="muted">${esc(lv)} · seed ${r.seed}</span></h4>
+      <div class="score">Score <b>${r.score.toFixed(1)}</b> <span class="muted small">= profit ${fmt(r.profit)} gold${r.delivered ? ' + 10 for the contract' : ''}</span></div>
+      <ul>${r.reasons.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      <h4>Key decisions</h4>
+      <ul>${r.decisions.length ? r.decisions.map((x) => `<li>${esc(x)}</li>`).join('') : '<li>No trades: the blight came and went without you.</li>'}</ul>
+      <div class="small">${this.chResult.replayed ? `✓ Replay check: seed ${r.seed} + your ${r.moves} recorded moves give the same score.` : '<span class="down">Replay check failed: please report it.</span>'}</div>
+      <div class="row">
+        <a class="btn primary" href="?challenge=${lv}">Play again (same seed)</a>
+        ${lv !== 'hard' ? `<a class="btn" href="?challenge=${next}">Try ${next}</a>` : ''}
+        <a class="btn" href="?guest">Free play</a>
+      </div>
+      <div class="muted small">${(Object.keys(CHALLENGES) as (keyof typeof CHALLENGES)[]).map((k) => `${k}: goal +${fmt(CHALLENGES[k].target, 0)}`).join(' · ')}</div>`;
   }
 
   private renderTop() {
@@ -330,7 +392,7 @@ export class Ui {
     <p class="muted small">Gold is locked in the contract until delivery. Refunded if the deadline passes.</p>
     <div class="row"><button class="primary" data-act="order">Order ${f.qty} × ${esc(ITEM_DEFS[f.item].name.toLowerCase())}</button></div>
     ${myOrders.length ? `<h4>Your orders</h4>${myOrders.map((o) => `<div class="kvrow small"><span>#${o.id} ${o.qty}× ${o.item} · max ${fmt(o.maxPrice)}</span><span>${o.status === 'open' ? `${o.filled}/${o.qty} · due day ${o.deadlineDay} <button data-act="cancel" data-id="${o.id}">Cancel</button>` : o.status}</span></div>`).join('')}` : ''}
-    <p class="muted small">Every trade is on the record. <button class="linkish" data-act="prove">⛓ Prove on NEAR</button></p>
+    <p class="muted small">Every trade shows where it stands (simulated, queued, on chain, failed, or kept in the game and reconciled daily): <button class="linkish" data-act="prove">⛓ Prove on NEAR</button></p>
   </section>
 </div>`;
   }
@@ -353,14 +415,23 @@ export class Ui {
     return `${esc(t.method.replace(/^relay_/, '').replace(/_/g, ' '))}${a.qty ? ` ${a.qty}` : ''}${a.item ? ` ${esc(String(a.item))}` : ''}${by}`;
   }
 
-  /** One transaction's status: a link on NEAR, "on its way", or "simulated" in the guest village. */
+  /**
+   * One transaction's state (simulated / queued / finalized / failed / reconciled). Only a
+   * real hash gets an explorer link; nothing else is dressed up as on chain.
+   */
   private txState(hash: string) {
-    if (this.src.chain !== 'near') return '<span class="muted">simulated</span>';
-    const k = txKind(hash);
-    if (k === 'chain') return `<a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(hash)}">${esc(short(hash))} ↗</a>`;
-    if (k === 'pending') return '<span class="muted">on its way to NEAR…</span>';
-    if (k === 'local') return '<span class="muted">kept in the game</span>';
-    return `<span class="down">${esc(short(hash))}</span>`;
+    const st = this.src.chain !== 'near' ? 'simulated' : txState(hash);
+    const hint = esc(TX_STATE_HINT[st]);
+    switch (st) {
+      case 'finalized': return `<span class="txs ok" title="${hint}">on chain</span> <a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/txns/${esc(hash)}">${esc(short(hash))} ↗</a>`;
+      case 'failed': {
+        const why = hash.slice('failed:'.length);
+        return `<span class="txs bad" title="${esc(why || hint)}">failed</span>${why ? ` <span class="muted small">${esc(why.slice(0, 40))}</span>` : ''}`;
+      }
+      case 'queued': return `<span class="txs" title="${hint}">queued…</span>`;
+      case 'reconciled': return `<span class="txs" title="${hint}">kept in game · reconciled</span>`;
+      default: return `<span class="txs" title="${hint}">simulated</span>`;
+    }
   }
 
   private txRowsHtml(rows: { t: number; signer: string; method: string; args: Record<string, unknown>; ok: boolean; hash: string }[]) {
@@ -389,7 +460,8 @@ export class Ui {
 <div class="grid-2">
   <section class="pcard">
     <h3>⛓ Prove on NEAR</h3>
-    <p class="small">Your gold, trades and badges are on NEAR testnet. Every link below opens the public explorer.</p>
+    <p class="small">Your market trades, orders, request deliveries and badges are relayed to NEAR testnet; each row shows its state, and only real transactions get an explorer link.</p>
+    <p class="muted small">What stays in the game: stall and guild trades, quest rewards, eating and upkeep. Once a game day the operator's <span class="mono">reconcile</span> writes the game's balances to the chain and logs how much it changed. Claim your key (Account) and reconcile never touches your account again.</p>
     <div class="kvrow small"><span>Your account</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(acct)}">${esc(acct.slice(0, 10))}…${esc(acct.slice(-6))} ↗</a></div>
     <div class="kvrow small"><span>Game contract</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(NEAR_CONFIG.contract)}">${esc(NEAR_CONFIG.contract)} ↗</a></div>
     ${yours}
@@ -440,10 +512,10 @@ export class Ui {
     const rows = this.myTxRows(2);
     const near = this.src.chain === 'near';
     el.innerHTML = `<button class="close" data-card="receipt-close">×</button>
-      <h4>Your first trade is on the record</h4>
+      <h4>Your first trade</h4>
       ${this.txRowsHtml(rows)}
       ${near
-        ? '<p class="small">Signed on NEAR testnet by the game for your account; the link appears once the block lands.</p><div class="row"><button data-card="prove">⛓ Prove on NEAR</button><button data-card="receipt-close">Got it</button></div>'
+        ? '<p class="small">Relayed to NEAR testnet for your account: queued first, then on chain with a link (or failed, and it says so).</p><div class="row"><button data-card="prove">⛓ Prove on NEAR</button><button data-card="receipt-close">Got it</button></div>'
         : `<p class="small">${this.src.mode === 'guest' ? 'In the online village this is a real NEAR testnet transaction, under an account made for you.' : 'This server runs without the chain mirror; the hosted village signs this on NEAR testnet.'}</p><div class="row">${this.hooks.signIn ? '<button class="primary" data-card="signin">Sign in with Google</button>' : ''}<button data-card="receipt-close">Keep playing</button></div>`}`;
   }
 
@@ -507,6 +579,12 @@ export class Ui {
       case 'go-order': if (this.panel !== 'market') this.open('market'); $('[data-act="order"]', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
       case 'go-ffwd': document.getElementById('ffwd')?.click(); break;
       case 'go-dashboard': window.open('./dashboard.html', '_blank', 'noopener'); break;
+      case 'ch-deliver': {
+        const r = this.ch?.deliver();
+        if (r) this.toast(r.ok ? r.info ?? 'Delivered' : r.reason, !r.ok);
+        this.render();
+        break;
+      }
       case 'go-npc': this.open('npc', 'mike'); break;
       case 'go-redteam': this.open('npc', 'bruno'); $('[name="attack"]', $('#panel'))?.scrollIntoView({ block: 'center' }); break;
     }
@@ -704,6 +782,8 @@ export class Ui {
     <div class="row"><select name="attack" class="grow">${RED_TEAM_ATTACKS.map((a, i) => (a.npc === id ? `<option value="${i}"${i === this.redAttack ? ' selected' : ''}>${esc(a.name)}${a.layer === 'contract' ? ' (contract)' : ''}</option>` : '')).join('')}</select><button class="danger" data-act="redteam" ${this.redBusy ? 'disabled' : ''}>Attack</button></div>
   </section>
   <section class="pcard">
+    <h3>Decision inspector</h3>
+    ${this.inspector(id)}
     <h3>Transaction log</h3>
     ${txs.map((t) => `<div class="tx ${t.ok ? '' : 'bad'}"><time>${hh(t.t)}</time> <span>${esc(t.method)} ${esc(summarizeArgs(t.args))}${t.ok ? '' : ' · BLOCKED'}</span></div>`).join('') || '<div class="muted small">no transactions yet</div>'}
     ${blocked ? `<div class="why"><h4>Why it was blocked</h4><p>${esc(blocked.reason ?? '')}. The LLM may propose anything; the signer only signs methods on the key, and the contract refuses spending over the daily budget.</p></div>` : ''}
@@ -716,6 +796,37 @@ Act:   ${esc(d.act)}
 Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decisions yet today.</div>'}
   </section>
 </div>`;
+  }
+
+  /**
+   * Every recent decision of this NPC with where it came from (a model or the rules), what
+   * it saw, what it decided, what the guard did to it and the receipt it left.
+   */
+  private inspector(id: NpcId) {
+    const v = this.v;
+    const def = NPC_DEFS[id];
+    const src = (by?: string) => {
+      const s = !by ? 'rules' : /model unavailable|fallback/i.test(by) ? 'fallback' : /^rules/i.test(by) ? 'rules' : 'llm';
+      return `<span class="src ${s}" title="${esc(by ?? 'rules')}">${s === 'llm' ? `LLM · ${esc((by ?? '').replace(/ \(.*$/, ''))}` : s === 'fallback' ? 'rules (model failed)' : 'rules'}</span>`;
+    };
+    const rows: { t: number; html: string }[] = [];
+    for (const d of v.s.diary.filter((x) => x.npc === id && x.goal.startsWith('plan day')).slice(-2)) {
+      rows.push({ t: d.t, html: `<div class="insp"><div>${src(d.by)} <b>day plan</b> <span class="muted">day ${Math.floor(d.t / 24) + 1} · ${hh(d.t)}</span></div>
+        <div class="small"><span class="muted">Input:</span> ${esc(d.saw)}</div>
+        <div class="small"><span class="muted">Output:</span> ${esc(d.act.replace(/^plan: /, ''))}${d.think ? ` · "${esc(d.think.slice(0, 120))}"` : ''}</div>
+        <div class="small"><span class="muted">Guard:</span> ${esc(d.guard.replace(/^plan guard: /, ''))}</div>
+        <div class="small"><span class="muted">Receipt:</span> a plan moves no gold; it only sets the dials the engine uses</div></div>` });
+    }
+    for (const d of (v.s.deals ?? []).filter((x) => x.buyer === id || x.seller === id).slice(-2)) {
+      const hire = d.status === 'agreed' ? v.s.txs.find((t) => t.method === 'hire' && t.signer === NPC_DEFS[d.buyer].account && t.args.seller === NPC_DEFS[d.seller].account && t.args.price === d.price && Math.floor(t.t / 24) + 1 === d.day) : undefined;
+      const mid = midPrice(d.item, v.s.market.stock[d.item]);
+      rows.push({ t: (d.day - 1) * 24, html: `<div class="insp"><div>${src(d.by)} <b>deal</b> ${esc(NPC_DEFS[d.buyer].name)} ← ${esc(NPC_DEFS[d.seller].name)} <span class="muted">day ${d.day}</span></div>
+        <div class="small"><span class="muted">Input:</span> ${esc(d.item)} at the market ${fmt(mid, 2)} now; ${d.rounds.length} message${d.rounds.length === 1 ? '' : 's'} between the two agents</div>
+        <div class="small"><span class="muted">Output:</span> ${d.status === 'agreed' ? `${fmt(d.price!, 2)} per ${esc(d.item)}, up to ${d.maxQty}, used ${d.used}` : 'no deal'}</div>
+        <div class="small"><span class="muted">Guard:</span> ${d.guard.length ? esc(d.guard.join('; ')) : 'price within 60–160% of the market, at most 12 units: passed'}</div>
+        <div class="small"><span class="muted">Receipt:</span> ${hire ? `hire signed by ${esc(def.name === NPC_DEFS[d.buyer].name ? 'its own' : `${NPC_DEFS[d.buyer].name}'s`)} key · ${this.txState(hire.hash)}` : d.status === 'agreed' ? 'no delivery needed yet' : 'nothing signed'}</div></div>` });
+    }
+    return rows.sort((a, b) => b.t - a.t).map((r) => r.html).join('') || '<div class="muted small">No decisions yet. Plans and deals are made each morning.</div>';
   }
 
   // ------------------------------------------------------------------ events

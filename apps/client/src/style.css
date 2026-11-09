@@ -298,3 +298,24 @@ table.mkt .spark { width: 72px; }
 .bubble-deal { background: #e6f7df; border-color: #2f6b2a; }
 #login.upgrade { background: #120d09cc; }
 .kvrow a.tx { white-space: nowrap; }
+.txs { font-size: 11px; padding: 0 5px; border-radius: 3px; background: #ffffff14; color: var(--muted, #b9a88f); white-space: nowrap; }
+.txs.ok { background: #2f6b2a55; color: #bfe8b0; }
+.txs.bad { background: #8a2b1f55; color: #ffb4a3; }
+#challenge { position: absolute; left: 12px; top: 12px; z-index: 5; width: 330px; padding: 8px 12px 10px; background: #1e2130f5; border-color: var(--gold); }
+#challenge h4 { margin: 2px 0 6px; font: 600 14px var(--pixel); color: #f0c56b; }
+#challenge h4 .muted { font: 12px var(--sans); margin-left: 6px; }
+#challenge .bulletin { margin: 6px 0; padding-left: 16px; font-size: 12px; }
+#challenge .bulletin li { margin: 2px 0; }
+#challenge .row { display: flex; gap: 6px; margin: 6px 0; flex-wrap: wrap; }
+#challenge.end { left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(520px, 92%); max-height: 88%; overflow: auto; z-index: 8; padding: 14px 18px; }
+#challenge.end h4 { font-size: 18px; }
+#challenge.end ul { padding-left: 18px; font-size: 13px; }
+#challenge .score { font-size: 15px; margin: 4px 0 8px; }
+#challenge .score b { font: 600 22px var(--pixel); color: #f0c56b; }
+#challenge .btn { text-decoration: none; }
+body[data-mode="online"] #challenge-btn { display: none; }
+.insp { border-left: 3px solid #5b4330; padding: 3px 0 5px 8px; margin: 6px 0; }
+.src { font: 600 10.5px var(--mono); padding: 0 5px; border-radius: 3px; background: #ffffff1a; }
+.src.llm { background: #3a5fa0; color: #fff; }
+.src.rules { background: #5b4330; color: #f3e6cf; }
+.src.fallback { background: #8a2b1f; color: #fff; }

@@ -515,7 +515,7 @@ fn migrate_keeps_version_1_balances_and_orders() {
     };
     env::state_write(&v1);
     let c = Hearth::migrate();
-    assert_eq!(c.get_version(), "4");
+    assert_eq!(c.get_version(), "5");
     assert_eq!(bal(&c, "mike.hearth.testnet"), 7_777);
     assert_eq!(c.get_npc(acc("mike.hearth.testnet")).unwrap().spent_today, 5_900);
     assert_eq!(c.get_open_orders().len(), 1);
@@ -620,3 +620,83 @@ fn request_price_is_capped() {
     c.relay_market_buy(acc("p-9.hearth.testnet"), Item::Wheat, 1, 1_000);
     c.relay_deliver_request(acc("p-9.hearth.testnet"), acc("theo.hearth.testnet"), Item::Wheat, 1, 100_000, U128(0));
 }
+
+// ---------------------------------------------------------------- version 5: trust boundary
+
+#[test]
+fn reconcile_skips_self_custody_players_and_reports_what_it_rewrote() {
+    let mut c = setup();
+    as_caller("khang.testnet");
+    c.self_custody();
+    assert!(c.is_self_custody(acc("khang.testnet")));
+    as_caller("oracle.testnet");
+    c.reconcile(
+        2,
+        vec![],
+        None,
+        vec![(acc("khang.testnet"), U128(1)), (acc("mallory.testnet"), U128(6_000))],
+        vec![(acc("khang.testnet"), Item::Sword, 9), (acc("mallory.testnet"), Item::Wheat, 2)],
+    );
+    // the self-custody player is untouched, the other one is re-anchored
+    assert_eq!(bal(&c, "khang.testnet"), 5_000);
+    assert_eq!(c.item_balance(acc("khang.testnet"), Item::Sword), 0);
+    assert_eq!(bal(&c, "mallory.testnet"), 6_000);
+    assert_eq!(c.item_balance(acc("mallory.testnet"), Item::Wheat), 2);
+    let summary = get_logs().into_iter().find(|l| l.contains("\"event\":\"reconcile\"")).expect("summary event");
+    assert!(summary.contains("\"self_custody_skipped\":2"));
+    assert!(summary.contains("\"gold_minted\":\"1000\""));
+    assert!(summary.contains("\"item_balances_set\":1"));
+}
+
+#[test]
+fn the_operator_can_put_a_claimed_player_in_self_custody_but_never_back() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    c.relay_self_custody(acc("mallory.testnet"));
+    assert!(c.is_self_custody(acc("mallory.testnet")));
+    c.reconcile(2, vec![], None, vec![(acc("mallory.testnet"), U128(0))], vec![]);
+    assert_eq!(bal(&c, "mallory.testnet"), 5_000);
+}
+
+#[test]
+#[should_panic(expected = "player not registered")]
+fn npcs_cannot_leave_the_books() {
+    let mut c = setup();
+    as_caller("theo.hearth.testnet");
+    c.self_custody();
+}
+
+#[test]
+#[should_panic(expected = "oracle only")]
+fn only_the_oracle_relays_self_custody() {
+    let mut c = setup();
+    as_caller("mallory.testnet");
+    c.relay_self_custody(acc("khang.testnet"));
+}
+
+#[test]
+fn the_owner_moves_the_oracle_role_to_another_account() {
+    let mut c = setup();
+    as_caller("owner.testnet");
+    c.set_oracle(acc("ops.testnet"));
+    assert_eq!(c.get_roles().1, acc("ops.testnet"));
+    as_caller("ops.testnet");
+    c.reconcile(2, vec![], None, vec![], vec![]);
+}
+
+#[test]
+#[should_panic(expected = "owner only")]
+fn the_oracle_cannot_change_the_oracle() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    c.set_oracle(acc("ops.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "the oracle must not be the owner")]
+fn the_oracle_must_differ_from_the_owner() {
+    let mut c = setup();
+    as_caller("owner.testnet");
+    c.set_oracle(acc("owner.testnet"));
+}
+

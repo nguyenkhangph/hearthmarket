@@ -244,7 +244,8 @@ describe('chain mirror: gas budget', () => {
     expect(m.hook(playerSigner('khang'), 'market_buy', { item: 'wheat', qty: 1, max_price: 210 })).toMatch(/^pending/);
     // Theo's skipped hire left his chain stock short: goods-spending calls wait for the reconcile
     expect(m.hook(NPC_DEFS.theo.account, 'craft', { item: 'sword', crafts: 1 })).toBeNull();
-    expect(m.stats.unsynced).toBe(1);
+    expect(m.stats.heldBack).toBe(1);
+    expect(m.stats.unsynced).toBe(2); // the budgeted hire and the held-back craft wait for the reconcile
     now += 3_600_001;
     expect(m.hook(NPC_DEFS.theo.account, 'market_buy', { item: 'ore', qty: 1, max_price: 700 })).toMatch(/^pending/);
   });
@@ -258,10 +259,22 @@ describe('chain mirror: gas budget', () => {
     expect(buy()).toBeNull(); // over budget: the chain misses this ore
     expect(m.hook(NPC_DEFS.theo.account, 'craft', { item: 'sword', crafts: 1 })).toBeNull();
     expect(m.hook(NPC_DEFS.jack.account, 'hire', { seller: NPC_DEFS.theo.account, item: 'ore', qty: 1, price: 600 })).toBeNull();
+    expect(m.stats.unsynced).toBe(3);
     expect(m.startDay(game.village)).toBe(true);
     await m.idle();
+    // the reconcile carried what the game kept: nothing waits any more
+    expect(m.stats.unsynced).toBe(0);
+    expect(m.stats.reconciled).toBe(3);
     now += 3_600_001;
     expect(m.hook(NPC_DEFS.theo.account, 'craft', { item: 'sword', crafts: 1 })).toMatch(/^pending/);
+  });
+
+  it('keeps an NPC that is low on gas money in the game instead of failing on chain', () => {
+    const { m } = mirror({ minNpcNear: 0.15, maxPerMinute: 1000 });
+    m.balances = { [NPC_DEFS.mike.account]: 0.05, [NPC_DEFS.jack.account]: 1.2 };
+    expect(m.hook(NPC_DEFS.mike.account, 'market_sell', { item: 'ore', qty: 1, min_price: 300 })).toBeNull();
+    expect(m.hook(NPC_DEFS.jack.account, 'market_sell', { item: 'timber', qty: 1, min_price: 300 })).toMatch(/^pending/);
+    expect(m.stats.unsynced).toBe(1);
   });
 
   it('spends no gas while paused, and re-anchors the chain when a player comes back', () => {
@@ -305,5 +318,25 @@ describe('chain mirror: drift found while calls wait in the queue', () => {
     expect(chain.calls.some((c) => c.method === 'craft')).toBe(false);
     expect(m.stats.unsynced).toBe(1);
     expect(m.stats.failed).toBe(1);
+  });
+});
+
+describe('chain mirror: trust boundary (contract version 5)', () => {
+  it('a claimed player is put in self-custody on chain and left out of reconcile', async () => {
+    const { m, chain } = mirror({ maxPerMinute: 1000, maxQueue: 100 });
+    m.contractVersion = 5;
+    const game = new Game({ seed: 3, mirror: m }, new NpcBrain(null), new NpcSigner(chain, CONTRACT), chain);
+    game.join('khang', 'Khang');
+    game.join('lan', 'Lan');
+    await m.idle();
+    expect(m.claimed(`p-khang.${CONTRACT}`)).toMatch(/^pending/);
+    await m.idle();
+    expect(chain.calls.find((c) => c.method === 'relay_self_custody')?.args).toEqual({ player: `p-khang.${CONTRACT}` });
+    expect(m.startDay(game.village)).toBe(true);
+    await m.idle();
+    const rec = chain.calls.filter((c) => c.method === 'reconcile').at(-1)!;
+    const accounts = (rec.args.gold as [string, string][]).map(([a]) => a);
+    expect(accounts).toContain(`p-lan.${CONTRACT}`);
+    expect(accounts).not.toContain(`p-khang.${CONTRACT}`);
   });
 });

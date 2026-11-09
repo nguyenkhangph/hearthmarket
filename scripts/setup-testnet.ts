@@ -5,6 +5,9 @@
  *   npm run setup:testnet                  # do it
  *   npm run setup:testnet -- --operator-only   # only replace the operator key (after a contract
  *                                              # upgrade added an operator method)
+ *   npm run setup:testnet -- --operator-only --split-oracle
+ *                                              # version 5+: move the oracle role to ops.<contract>,
+ *                                              # a separate account, so the server's key is not the owner's
  *
  * Needs in .env:
  *   HEARTH_CONTRACT=your-name.testnet            (the deployed contract account)
@@ -38,6 +41,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = join(root, '.env');
 const dry = process.argv.includes('--dry-run');
 const operatorOnly = process.argv.includes('--operator-only');
+const splitOracle = process.argv.includes('--split-oracle');
 
 const contract = process.env.HEARTH_CONTRACT ?? '';
 const ownerKey = (process.env.OWNER_PRIVATE_KEY ?? '') as KeyPairString;
@@ -125,9 +129,10 @@ try {
     fail(`${contract} has no initialised hearth contract. Deploy it and call new(...) first (docs/testnet.md).`);
   }
 }
-if (!['2', '3', '4'].includes(version)) fail(`expected contract version 2, 3 or 4, found "${version}". Rebuild and redeploy contracts/hearth.`);
-const [, oracle] = (await view<[string, string]>('get_roles', {})) ?? ['', ''];
-if (oracle !== contract) console.log(`! the contract's oracle is ${oracle}; the operator key below goes on ${contract}. Relays will fail unless they match.\n`);
+if (!['2', '3', '4', '5'].includes(version)) fail(`expected contract version 2 to 5, found "${version}". Rebuild and redeploy contracts/hearth.`);
+if (splitOracle && Number(version) < 5) fail('--split-oracle needs contract version 5 (set_oracle). Deploy it first (docs/testnet.md, "Upgrade").');
+let [, oracle] = (await view<[string, string]>('get_roles', {})) ?? ['', ''];
+const opsAccount = `ops.${contract}`;
 
 for (const id of operatorOnly ? [] : NPCS) {
   const def = NPC_DEFS[id];
@@ -169,10 +174,25 @@ for (const id of operatorOnly ? [] : NPCS) {
   }
 }
 
-console.log(`Operator (${contract})`);
-const opKey = await replaceKeys(owner, 'operator', OPERATOR_METHODS);
+// the operator (oracle) key: on the contract account, or on ops.<contract> once the role is split
+if (splitOracle && oracle !== opsAccount) {
+  console.log(`Oracle → ${opsAccount}`);
+  if (!(await exists(opsAccount))) {
+    await step('create ops sub-account, 3 NEAR for relays and reconcile gas', () => owner.createSubAccount({ accountOrPrefix: 'ops', publicKey: ownerPub, nearToTransfer: parseNearAmount('3') }));
+  }
+  await step(`set_oracle(${opsAccount}) with the owner key`, () => owner.callFunction({ contractId: contract, methodName: 'set_oracle', args: { oracle: opsAccount } }));
+  // the old operator key on the contract account can now do nothing useful: remove it
+  for (const pk of await functionCallKeys(owner).catch(() => [] as string[])) {
+    await step(`contract account: delete old operator key ${pk.slice(0, 16)}…`, () => owner.deleteKey(pk));
+  }
+  oracle = opsAccount;
+}
+const opAccountId = oracle === opsAccount ? opsAccount : contract;
+if (oracle !== opAccountId) console.log(`! the contract's oracle is ${oracle}; the operator key below goes on ${opAccountId}. Relays will fail unless they match.\n`);
+console.log(`Operator (${opAccountId})`);
+const opKey = await replaceKeys(opAccountId === contract ? owner : new Account(opAccountId, provider, ownerKey), 'operator', OPERATOR_METHODS);
 if (opKey) {
-  env.ORACLE_ACCOUNT = contract;
+  env.ORACLE_ACCOUNT = opAccountId;
   env.ORACLE_KEY = opKey;
 }
 

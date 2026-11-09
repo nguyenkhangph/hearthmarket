@@ -34,7 +34,7 @@ export const NPC_KEY_METHODS: Record<NpcId, NpcMethod[]> = {
 export const OPERATOR_METHODS = [
   'reconcile', 'post_world_data', 'advance_day', 'mint_badge',
   'relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order',
-  'relay_deliver_request',
+  'relay_deliver_request', 'relay_self_custody',
 ] as const;
 
 export const ACTION_METHOD: Record<Action['type'], string> = {

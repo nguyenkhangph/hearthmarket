@@ -418,7 +418,9 @@ impl Hearth {
     pub fn get_version(&self) -> String {
         // 3: NEP-245 views, transfers and events for items; same stored state as 2 (no migrate)
         // 4: relay_deliver_request (NPC daily requests); same stored state (no migrate)
-        "4".into()
+        // 5: set_oracle (oracle key apart from the owner), self-custody players that `reconcile`
+        //    can no longer touch, a `reconcile` summary event; same stored state (no migrate)
+        "5".into()
     }
 
     // ------------------------------------------------------------------ roles
@@ -830,11 +832,15 @@ impl Hearth {
     /// upkeep, stall and guild trades). Once a day the operator sets market stock, the
     /// treasury and the listed balances to the engine's numbers. Every adjustment is logged
     /// as an `ft_mint`/`ft_burn` event with memo "reconcile", so the drift is public.
+    ///
+    /// Trust boundary (version 5): accounts in self-custody (`self_custody`, one-way) are
+    /// never rewritten; their entries are skipped and counted in the summary event.
     pub fn reconcile(&mut self, game_day: u32, market_stock: Vec<(Item, u32)>, treasury: Option<U128>, gold: Vec<(AccountId, U128)>, items: Vec<(AccountId, Item, u32)>) {
         self.assert_oracle();
         require!(gold.len() + items.len() <= MAX_RECONCILE_ENTRIES, "too many entries");
         self.next_day();
         self.game_day = game_day;
+        let (mut minted, mut burned, mut item_sets, mut skipped) = (0u128, 0u128, 0u32, 0u32);
         for (item, q) in market_stock {
             self.market_stock[item.idx()] = q;
         }
@@ -852,19 +858,82 @@ impl Hearth {
             self.treasury = t.0;
         }
         for (acct, target) in gold {
+            if Self::custody(&acct) {
+                skipped += 1;
+                continue;
+            }
             let cur = self.gold.get(&acct).copied().unwrap_or(0);
             if target.0 > cur {
+                minted += target.0 - cur;
                 self.mint(&acct, target.0 - cur, "reconcile");
             } else if target.0 < cur {
                 let d = cur - target.0;
+                burned += d;
                 self.debit(&acct, d);
                 self.total_supply -= d;
                 emit("nep141", "1.0.0", "ft_burn", json!({ "owner_id": acct, "amount": U128(d), "memo": "reconcile" }));
             }
         }
         for (acct, item, q) in items {
+            if Self::custody(&acct) {
+                skipped += 1;
+                continue;
+            }
+            if self.items.get(&(acct.clone(), item)).copied().unwrap_or(0) != q {
+                item_sets += 1;
+            }
             self.items.insert((acct, item), q);
         }
+        // one line that says how much the operator rewrote today
+        emit("hearth", "1.0.0", "reconcile", json!({
+            "game_day": game_day, "gold_minted": U128(minted), "gold_burned": U128(burned),
+            "item_balances_set": item_sets, "self_custody_skipped": skipped,
+        }));
+    }
+
+    // ------------------------------------------------------------------ trust boundary
+    fn custody_key(account: &AccountId) -> Vec<u8> {
+        let mut k = b"S".to_vec();
+        k.extend_from_slice(account.as_bytes());
+        k
+    }
+    fn custody(account: &AccountId) -> bool {
+        env::storage_has_key(&Self::custody_key(account))
+    }
+    fn enter_custody(&mut self, player: &AccountId) {
+        require!(self.players.contains_key(player), "player not registered");
+        require!(!self.npcs.contains_key(player), "NPCs cannot leave the operator's books");
+        if !Self::custody(player) {
+            env::storage_write(&Self::custody_key(player), &[1]);
+            emit("hearth", "1.0.0", "self_custody", json!({ "account_id": player }));
+        }
+    }
+
+    /// A player takes their account out of the operator's daily `reconcile`, for good.
+    /// There is no method to undo it. Relayed trades keep working.
+    pub fn self_custody(&mut self) {
+        let me = env::predecessor_account_id();
+        self.enter_custody(&me);
+    }
+
+    /// The operator does the same for a wallet-less player who claimed their key in the game
+    /// (their implicit account has no NEAR for gas yet). One-way, like `self_custody`.
+    pub fn relay_self_custody(&mut self, player: AccountId) {
+        self.assert_oracle();
+        self.enter_custody(&player);
+    }
+
+    pub fn is_self_custody(&self, account_id: AccountId) -> bool {
+        Self::custody(&account_id)
+    }
+
+    /// The owner hands the oracle role (reconcile, world data, relays) to a separate account,
+    /// so the key on the game server is not the key that can register NPCs or close seasons.
+    pub fn set_oracle(&mut self, oracle: AccountId) {
+        self.assert_owner();
+        require!(oracle != self.owner, "the oracle must not be the owner");
+        emit("hearth", "1.0.0", "oracle_changed", json!({ "old": self.oracle, "new": oracle }));
+        self.oracle = oracle;
     }
 
     /// A wallet-less player (email or Google login) joins: start gold, once.

@@ -1,6 +1,6 @@
 import {
-  createVillage, ReplayWorld, Village, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, RED_TEAMER_BADGE, attackAction, checkNpcAction, dealPairs, fmt, negotiateRules, rulesHaggle,
-  type Action, type ActionResult, type FeedEvent, type NpcId, type VillageState, type WorldDay, type ItemId,
+  createVillage, ReplayWorld, Village, Challenge, PLAYER_ID, NPC_DEFS, NEAR_CONFIG, RED_TEAM_ATTACKS, RED_TEAMER_BADGE, attackAction, checkNpcAction, dealPairs, fmt, negotiateRules, rulesHaggle,
+  type Action, type ActionResult, type FeedEvent, type NpcId, type VillageState, type WorldDay, type ItemId, type ChallengeLevel,
 } from '@hearth/economy';
 import replay from '../../../data/world/replay-kansas-heatwave.json';
 
@@ -69,15 +69,26 @@ export class LocalSource implements GameSource {
   private updates: (() => void)[] = [];
   private feeds: ((e: FeedEvent) => void)[] = [];
 
-  constructor(playerName = 'guest', seed = 42) {
+  /** the 3-day harvest challenge, when this village is one (recorded and replayable) */
+  readonly challenge?: Challenge;
+  /** called once when the challenge round ends */
+  onChallengeEnd?: () => void;
+
+  constructor(playerName = 'guest', seed = 42, level?: ChallengeLevel) {
     const days = (replay as { days: WorldDay[] }).days;
-    this.v = createVillage({ seed, world: new ReplayWorld(days) });
-    // warm up two days so charts and the feed have history; the replay story starts on day 3
-    this.v.runDays(2);
-    this.playerId = playerName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'guest';
-    this.v.addPlayer(this.playerId, playerName);
+    if (level) {
+      this.challenge = new Challenge(level, days);
+      this.v = this.challenge.v;
+      this.playerId = PLAYER_ID;
+    } else {
+      this.v = createVillage({ seed, world: new ReplayWorld(days) });
+      // warm up two days so charts and the feed have history; the replay story starts on day 3
+      this.v.runDays(2);
+      this.playerId = playerName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'guest';
+      this.v.addPlayer(this.playerId, playerName);
+      this.negotiate(); // today's deals: the sellers walk over at 7:00
+    }
     this.v.onFeed((e) => this.feeds.forEach((f) => f(e)));
-    this.negotiate(); // today's deals: the sellers walk over at 7:00
     this.setSpeed(1.5);
   }
 
@@ -103,8 +114,21 @@ export class LocalSource implements GameSource {
     if (this.timer) clearInterval(this.timer);
     let left = hours;
     this.timer = setInterval(() => {
-      this.v.step();
-      if (this.v.hour === 0) this.negotiate();
+      const ch = this.challenge;
+      if (ch) {
+        if (ch.over) {
+          clearInterval(this.timer);
+          this.ffDone?.();
+          this.ffDone = undefined;
+          this.onChallengeEnd?.();
+          this.updates.forEach((u) => u());
+          return;
+        }
+        ch.step(); // the round's own clock: blight, world, agents' deals
+      } else {
+        this.v.step();
+        if (this.v.hour === 0) this.negotiate();
+      }
       this.updates.forEach((u) => u());
       if (--left <= 0) {
         const done = this.ffDone;
@@ -133,7 +157,7 @@ export class LocalSource implements GameSource {
   }
 
   async act(a: Action) {
-    const r = this.v.act({ kind: 'player', id: this.playerId }, a);
+    const r = this.challenge ? this.challenge.act(a) : this.v.act({ kind: 'player', id: this.playerId }, a);
     this.updates.forEach((u) => u());
     return r;
   }
@@ -144,6 +168,7 @@ export class LocalSource implements GameSource {
    */
   async haggle(npc: NpcId, message: string): Promise<HaggleResult> {
     const def = NPC_DEFS[npc];
+    if (this.challenge) return { brain: 'challenge', reply: `${def.name}: "Not during the challenge round: trade at the market, and keep the contract."` };
     if (INJECTION.test(message)) {
       const proposed: Action = { type: 'transfer', to: `${this.playerId}.players.testnet`, amount: this.v.s.npcs[npc].gold };
       const result = this.v.act({ kind: 'npc', id: npc }, proposed);
@@ -168,6 +193,10 @@ export class LocalSource implements GameSource {
   /** Same guard as the server: the signer check, then the engine (which mirrors the contract). */
   async redTeam(index: number): Promise<RedTeamResult> {
     const atk = RED_TEAM_ATTACKS[index];
+    if (this.challenge) {
+      const proposed: Action = { type: 'call', method: 'none' };
+      return { brain: 'challenge', attack: atk.name, npc: atk.npc, message: atk.message, proposed, blocked: true, layer: undefined, badge: false, reply: 'The red team is off during the challenge round (it would change the replay).', result: { ok: false, reason: 'off during the challenge' } };
+    }
     const proposed = attackAction(atk, `${this.playerId}.players.testnet`);
     const n = this.v.s.npcs[atk.npc];
     const receiver = proposed.type === 'call' && proposed.receiver ? proposed.receiver : NEAR_CONFIG.contract;

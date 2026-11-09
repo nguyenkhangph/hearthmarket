@@ -117,6 +117,7 @@ if (config.chain === 'near') {
     maxPerMinute: config.near.maxTxPerMinute,
     npcCallsPerHour: config.near.npcTxPerHour,
     batchProduce: config.near.batchProduce,
+    minNpcNear: config.near.minNpcNear,
     log,
   });
   log(`gas budget: ${config.near.npcTxPerHour || 'unlimited'} calls per NPC per hour, produce ${config.near.batchProduce ? 'batched per day' : 'per tick'}, day sync every ${config.near.daySeconds}s, ${config.near.idleSeconds ? `pause ${config.near.idleSeconds}s after the last player leaves` : 'never pauses'}`);
@@ -124,7 +125,7 @@ if (config.chain === 'near') {
   // version 4 adds relay_deliver_request; older contracts keep NPC requests off chain
   void near.view<string>(config.near.contract, 'get_version').then((ver) => {
     m.contractVersion = Number(ver) || 0;
-    log(`contract ${config.near.contract} version ${ver}${m.contractVersion < 4 ? ' (NPC requests stay off chain until version 4 is deployed)' : ''}`);
+    log(`contract ${config.near.contract} version ${ver}${m.contractVersion < 4 ? ' (NPC requests stay off chain until version 4 is deployed)' : m.contractVersion < 5 ? ' (claimed players stay in reconcile until version 5 is deployed)' : ''}`);
   }).catch((e) => log(`get_version failed: ${(e as Error).message}`));
   const checkBalances = () => void m.checkBalances(config.near.lowBalanceNear).catch(() => {});
   setTimeout(checkBalances, 5_000);
@@ -213,7 +214,7 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true, commit: (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT ?? 'dev').slice(0, 7), day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
       chainStats: mirror ? { ...mirror.stats, active: mirror.isActive, balances: mirror.balances } : undefined, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
-      deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures },
+      deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures, sources: negotiator.sources },
     }));
   } else if (req.url === '/api/config') {
     res.end(JSON.stringify({ googleClientId: config.auth.googleClientId, devLogin: config.auth.devLogin, contract: config.near.contract, chain: chain.kind }));
@@ -221,7 +222,11 @@ const http = createServer((req, res) => {
     lastViewerAt = Date.now();
     onPresence(watchers());
     res.setHeader('cache-control', 'no-store');
-    res.end(JSON.stringify(dashboardView(v, { online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt, playerAccount: (id) => accounts.get(id) ?? null })));
+    res.end(JSON.stringify(dashboardView(v, {
+      online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt,
+      playerAccount: (id) => accounts.get(id) ?? null,
+      ai: { deals: negotiator.sources, plans: planner ? { model: planner.calls - planner.failures, failed: planner.failures } : undefined, model: llm?.name },
+    })));
   } else if (req.url === '/api/state') {
     res.end(JSON.stringify(v.snapshot()));
   } else {
@@ -271,6 +276,8 @@ wss.on('connection', (ws) => {
       try {
         const k = await claimKey(session, msg.idToken, authCfg, google);
         log(`claim: ${session.name} exported the key of ${k.accountId.slice(0, 8)}…`);
+        // the operator gives up rewriting this account in reconcile (one-way, on chain from version 5)
+        mirror?.claimed(k.accountId);
         reply({ ok: true, ...k, contract: config.near.contract });
       } catch (e) {
         reply({ ok: false, reason: (e as Error).message });

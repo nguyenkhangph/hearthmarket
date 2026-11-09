@@ -103,11 +103,21 @@ export async function negotiateLlm(llm: LlmClient, v: Village, p: Pair): Promise
 
 export { negotiateRules } from '@hearth/economy';
 
+/** Where each deal's words came from, since the server started (dashboard: "llm vs rules"). */
+export interface DealSources {
+  model: number;
+  rules: number;
+  /** the model failed or timed out, rules stepped in (labelled "rules (model unavailable)") */
+  fallback: number;
+}
+
 export class Negotiator {
-  private last = new Map<string, number>();
+  /** last time each pair negotiated with the model (rules days do not count) */
+  private lastModel = new Map<string, number>();
   private running = false;
   calls = 0;
   failures = 0;
+  readonly sources: DealSources = { model: 0, rules: 0, fallback: 0 };
 
   constructor(
     private llm: LlmClient | null,
@@ -123,41 +133,54 @@ export class Negotiator {
     return this.llm ? this.llm.name : 'rules';
   }
 
-  /** Start of a game day: negotiate the pairs that are due. Resolves when done (tests). */
+  /**
+   * Start of a game day: every pair strikes a deal. A pair whose last model negotiation is at
+   * least `everyMs` old (and someone is online) uses the model; the others use the rules, and
+   * the deal says so. Rules days never delay the next model negotiation.
+   * Resolves when done (tests).
+   */
   onNewDay(v: Village): Promise<void> {
     if (this.running) return Promise.resolve();
     const now = (this.opts.now ?? Date.now)();
-    const due = dealPairs().filter((p) => {
+    const model = this.model;
+    const plan = dealPairs().map((p) => {
       const k = `${p.buyer}:${p.seller}:${p.item}`;
-      // rules are free: every day; the model only every `everyMs`
-      if (this.model && now - (this.last.get(k) ?? -Infinity) < this.opts.everyMs) return false;
-      this.last.set(k, now);
-      return true;
+      const useModel = !!model && now - (this.lastModel.get(k) ?? -Infinity) >= this.opts.everyMs;
+      if (useModel) this.lastModel.set(k, now);
+      return { p, useModel };
     });
-    if (!due.length) return Promise.resolve();
     this.running = true;
-    return this.run(v, due).finally(() => {
+    return this.run(v, plan, model).finally(() => {
       this.running = false;
     });
   }
 
-  private async run(v: Village, pairs: Pair[]) {
-    for (const p of pairs) {
+  private async run(v: Village, plan: { p: Pair; useModel: boolean }[], model: LlmClient | null) {
+    const day = v.day;
+    // pairs negotiate side by side, so model deals land early in the morning (sellers walk over at 6:00)
+    await Promise.all(plan.map(async ({ p, useModel }) => {
       let res: NegotiationResult;
-      const model = this.model;
-      let by = model ? model.name : 'rules';
+      let by = 'rules';
       try {
-        if (model) {
+        if (useModel && model) {
           this.calls++;
           res = await negotiateLlm(model, v, p);
-        } else res = negotiateRules(v, p);
+          by = model.name;
+          this.sources.model++;
+        } else {
+          res = negotiateRules(v, p);
+          this.sources.rules++;
+        }
       } catch (e) {
         this.failures++;
+        this.sources.fallback++;
         this.opts.log?.(`negotiation ${p.buyer}/${p.seller} ${p.item} failed, using rules: ${(e as Error).message}`);
         res = negotiateRules(v, p);
         by = 'rules (model unavailable)';
       }
+      // a model reply that arrives after the day turned is too late for that day
+      if (v.day !== day) return;
       v.setDeal({ ...p, agreed: res.agreed, price: res.price, maxQty: res.maxQty, by, rounds: res.rounds });
-    }
+    }));
   }
 }
