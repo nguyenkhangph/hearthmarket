@@ -153,6 +153,11 @@ export const RULES = {
   // stalls
   stallSlots: 4,
   stallRent: g(20),
+  // stall board: players list goods at a fixed price, NPCs or players buy the whole listing
+  listingMaxQty: 20,
+  listingsPerPlayer: 5,
+  listingDays: 3,
+  npcListingReserve: g(30), // a crafter keeps this much gold after buying a listing
 
   // adventurers buy swords from the world side (a faucet)
   adventurerDemand: [0, 2] as [number, number],

@@ -185,7 +185,24 @@ export interface TxRecord {
   reason?: string;
 }
 
+/** A player's listing on the stall board: goods in escrow at a fixed price (whole listing per sale). */
+export interface Listing {
+  id: number;
+  seller: string;
+  item: ItemId;
+  qty: number;
+  /** per unit */
+  price: Gold;
+  status: 'open' | 'sold' | 'cancelled';
+  buyer?: { kind: 'npc' | 'player'; id: string };
+  day: number;
+  tx?: string;
+  saleTx?: string;
+}
+
 export interface VillageState {
+  /** the stall board: players' listings (escrowed on chain by the stalls contract when enabled) */
+  listings?: Listing[];
   /** what each NPC remembers about each player (regard.ts) */
   regard?: Partial<Record<NpcId, Record<string, { trades: number; volume: Gold; delivered: number; lowballs: number; lastDay: number }>>>;
   seed: number;
@@ -256,6 +273,9 @@ export type Action =
   | { type: 'join_guild'; guild: string }
   | { type: 'deposit'; amount: Gold }
   | { type: 'rent_stall'; slot: number }
+  | { type: 'list_item'; item: ItemId; qty: number; price: Gold }
+  | { type: 'buy_listing'; id: number }
+  | { type: 'cancel_listing'; id: number }
   | { type: 'set_stall_prices'; slot: number; item: ItemId; buy: Gold; sell: Gold; fund?: Gold }
   | { type: 'propose_vote'; text: string; action: Action }
   | { type: 'cast_vote'; voteId: number; yes: boolean }

@@ -12,7 +12,7 @@ import { fmt } from './money.ts';
  */
 
 /** Methods an NPC function-call key may call on the hearth contract. */
-export const NPC_ALLOWED_METHODS = ['produce', 'craft', 'market_buy', 'market_sell', 'hire', 'fill_order', 'place_order', 'world_trade'] as const;
+export const NPC_ALLOWED_METHODS = ['produce', 'craft', 'market_buy', 'market_sell', 'hire', 'fill_order', 'place_order', 'world_trade', 'npc_stall_buy'] as const;
 export type NpcMethod = (typeof NPC_ALLOWED_METHODS)[number];
 
 /**
@@ -20,7 +20,7 @@ export type NpcMethod = (typeof NPC_ALLOWED_METHODS)[number];
  * other method for that key; the contract then checks who may produce, craft or trade
  * with the world.
  */
-const TRADE: NpcMethod[] = ['market_buy', 'market_sell', 'hire', 'fill_order', 'place_order'];
+const TRADE: NpcMethod[] = ['market_buy', 'market_sell', 'hire', 'fill_order', 'place_order', 'npc_stall_buy'];
 export const NPC_KEY_METHODS: Record<NpcId, NpcMethod[]> = {
   mike: ['produce', ...TRADE],
   jack: ['produce', ...TRADE],
@@ -35,6 +35,7 @@ export const OPERATOR_METHODS = [
   'reconcile', 'post_world_data', 'advance_day', 'mint_badge',
   'relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order',
   'relay_deliver_request', 'relay_self_custody',
+  'relay_stall_list', 'relay_stall_buy', 'relay_stall_cancel', 'relay_stall_withdraw',
 ] as const;
 
 export const ACTION_METHOD: Record<Action['type'], string> = {
@@ -51,6 +52,9 @@ export const ACTION_METHOD: Record<Action['type'], string> = {
   propose_vote: 'propose_vote',
   cast_vote: 'cast_vote',
   deliver_request: 'deliver_request',
+  list_item: 'list_item',
+  buy_listing: 'buy_listing',
+  cancel_listing: 'cancel_listing',
   hire: 'hire',
   fill_order: 'fill_order',
   produce: 'produce',

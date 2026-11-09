@@ -319,3 +319,11 @@ body[data-mode="online"] #challenge-btn { display: none; }
 .src.llm { background: #3a5fa0; color: #fff; }
 .src.rules { background: #5b4330; color: #f3e6cf; }
 .src.fallback { background: #8a2b1f; color: #fff; }
+
+/* stall board (player listings) */
+.pcard.stall-board { margin-top: 12px; }
+.stall-board .row-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; align-items: end; }
+.stall-board .row-form .kvrow { grid-column: 1 / -1; }
+.stall-board .row-form input, .stall-board .row-form select { width: 100%; }
+@media (max-width: 640px) { .stall-board .row-form { grid-template-columns: 1fr; } }
+.stall-board .row-form label { display: flex; flex-direction: column; align-items: stretch; gap: 4px; border-bottom: 0; }

@@ -125,7 +125,8 @@ Plainly, so nobody has to dig:
 
 - **Signed on NEAR by the NPC's own key** (function-call key, its own method list, a daily gold budget in the contract): production, crafting, agent-to-agent hires, market trades, order fills, Bruno's world trades.
 - **Relayed by the operator for wallet-less players**: registration, market buys and sells, orders, request deliveries; badges are minted by the operator. The contract lets the operator trade for registered players, never transfer their gold out.
-- **Kept in the game only**: stall and guild trades, quest rewards, eating, upkeep, adventurers at the inn, and NPC actions skipped while nobody is online, over the gas budget, or held back because the NPC's chain balance was behind. **Market Wars and on-chain guild funds are not built.**
+- **Stall board (contract version 6 + `contracts/stalls`, behind `STALLS_ONCHAIN`)**: a player's listing moves the goods into a separate stalls contract by NEP-245 `mt_transfer_call`; a buyer pays it by `ft_transfer_call` (players relayed by the operator, NPCs with their own key through `npc_stall_buy`, inside the daily budget); the stalls contract pays the seller and hands over the goods in the same transaction. Sold twice, short payments and strangers' cancels are refused on chain. With the flag off, listings stay in the game.
+- **Kept in the game only**: guild-stall and guild trades, quest rewards, eating, upkeep, adventurers at the inn, and NPC actions skipped while nobody is online, over the gas budget, or held back because the NPC's chain balance was behind. **Market Wars and on-chain guild funds are not built.**
 - **Daily `reconcile`**: once a game day the operator (oracle) writes the game's market stock, treasury and the balances of the NPCs and up to 8 recently active players to the chain. Every change is an `ft_mint`/`ft_burn` with memo `reconcile`; from contract version 5 one summary event per call says how much gold it minted and burned and how many item balances it set.
 - **Claim = out of reconcile (version 5)**: when a Google player reveals their key, the operator calls `relay_self_custody` once; from then on `reconcile` skips that account, and no method undoes it. A player with their own gas can call `self_custody` directly.
 - **Owner and oracle can be separate (version 5)**: `set_oracle` hands reconcile, world data and relays to `ops.<contract>`, so the key on the game server cannot register NPCs or close seasons (`npm run setup:testnet -- --operator-only --split-oracle`).
@@ -146,6 +147,7 @@ Plainly, so nobody has to dig:
 | **Oracle with verifiable inputs**: each day's world data posted with the API source, the reading and the SHA-256 of the full Open-Meteo payload | `post_world_data`; `apps/server/src/world/openMeteo.ts` |
 | **NEAR AI Cloud** (OpenAI-compatible) for NPC brains: day plans within bounded dials, haggling | `apps/server/src/brain/`; `npm run llm:check` |
 | **Gas budget**: NPC accounts pay their own gas, so the mirror pauses while nobody is online, caps calls per NPC per hour, batches a day of production into one `produce` per item, and warns when an account runs low | `apps/server/src/chain/mirror.ts`; settings in `.env.example` (`CHAIN_*`) |
+| **Cross-contract escrow (version 6)**: NEP-245 `mt_transfer_call` and NEP-141 `ft_transfer_call` into a separate stalls contract, with resolve callbacks that refund what the receiver did not use; payouts that fail stay owed and anyone can push `withdraw_for` (it pays only the owner) | `contracts/stalls/src/lib.rs`, `relay_stall_*` / `npc_stall_buy` in `contracts/hearth`; `npm run stalls:smoke` on testnet |
 | Guild funds on chain | *planned* |
 | **NEAR Intents** (1Click API, read-only): village gold is pegged to real gold; Bruno converts world prices at the tokenized-gold (XAUT) price NEAR Intents quotes, posted on chain with the payload hash. No swaps: game gold never leaves the game | `apps/server/src/world/intents.ts`, `Village.setWorldFx` (factor clamped to 0.9–1.1) |
 
@@ -180,6 +182,8 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | `apps/client` | Vite + Phaser 3 client. Map built from Cute Fantasy autotiles; DOM panels modelled on the design mockups |
 | `apps/server` | Game server: clock, WebSocket API, NPC brain (OpenAI-compatible), signer, NEAR adapter, Open-Meteo world feed, injection tests |
 | `contracts/hearth` | Rust `near-sdk` contract with unit tests |
+| `contracts/stalls` | Stall board escrow contract (listings, purchases, cancels, withdrawals) with unit tests |
+| `scripts/stalls-smoke.ts` | Testnet smoke test of the stall board, including the cases that must fail |
 | `scripts/sim.ts` | Economy simulation → `docs/economy-sim.md` |
 | `scripts/import-assets.mjs` | Imports the licensed asset pack locally |
 | `scripts/setup-testnet.ts` | Creates NPC sub-accounts, function-call keys and contract registrations on testnet |
@@ -227,7 +231,8 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Economy health: inflation/deflation warning from price index, 7-day gold supply and faucets vs sinks; index and supply per season | working (dashboard and the game's Economy panel) |
 | Real NEAR Intents swaps | not planned: game gold has no real value (read-only quote only, see above) |
 | Rare NEP-245 items from quests, moving goods to a wallet | not planned for the hackathon: goods already are NEP-245 and players can `mt_transfer` them after claiming their account |
-| Market wars, guild funds and stall escrow on chain | not built (stall and guild trades stay in the game and reach the chain only through `reconcile`) |
+| Stall board: players list goods at their price, NPCs buy listings at 11:00 and 16:00 (crafters when it beats the market's ask, Bruno at 5% under what the market pays) | working (engine, online and guest); on chain through the stalls contract once version 6 is deployed and `STALLS_ONCHAIN=1` (docs/testnet.md, "Upgrade from version 5 to 6") |
+| Market wars and guild funds on chain | not built (guild trades stay in the game and reach the chain only through `reconcile`) |
 
 ## Built during NEAR HACKATHON
 

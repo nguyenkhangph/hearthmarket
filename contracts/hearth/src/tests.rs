@@ -515,7 +515,7 @@ fn migrate_keeps_version_1_balances_and_orders() {
     };
     env::state_write(&v1);
     let c = Hearth::migrate();
-    assert_eq!(c.get_version(), "5");
+    assert_eq!(c.get_version(), "6");
     assert_eq!(bal(&c, "mike.hearth.testnet"), 7_777);
     assert_eq!(c.get_npc(acc("mike.hearth.testnet")).unwrap().spent_today, 5_900);
     assert_eq!(c.get_open_orders().len(), 1);
@@ -698,5 +698,125 @@ fn the_oracle_must_differ_from_the_owner() {
     let mut c = setup();
     as_caller("owner.testnet");
     c.set_oracle(acc("owner.testnet"));
+}
+
+// ---------------------------------------------------------------- version 6: player stalls
+
+fn with_stalls() -> Hearth {
+    let mut c = setup();
+    as_caller("owner.testnet");
+    c.set_stalls(acc("stalls.hearth.testnet"));
+    c.add_item(&acc("khang.testnet"), Item::Ore, 5);
+    c
+}
+
+fn resolve_ctx(result: PromiseResult) {
+    testing_env!(
+        ctx("hearth.testnet").build(),
+        near_sdk::test_vm_config(),
+        near_sdk::RuntimeFeesConfig::test(),
+        Default::default(),
+        vec![result],
+    );
+}
+
+#[test]
+fn listing_moves_the_goods_into_the_stall_contract() {
+    let mut c = with_stalls();
+    as_caller("oracle.testnet");
+    let _ = c.relay_stall_list(acc("khang.testnet"), 7, Item::Ore, 3, U128(550));
+    assert_eq!(c.item_balance(acc("khang.testnet"), Item::Ore), 2);
+    assert_eq!(c.item_balance(acc("stalls.hearth.testnet"), Item::Ore), 3);
+    assert_eq!(c.get_stalls(), Some(acc("stalls.hearth.testnet")));
+}
+
+#[test]
+fn a_refused_listing_comes_back() {
+    let mut c = with_stalls();
+    as_caller("oracle.testnet");
+    let _ = c.relay_stall_list(acc("khang.testnet"), 7, Item::Ore, 3, U128(550));
+    resolve_ctx(PromiseResult::Successful(b"[\"3\"]".to_vec()));
+    assert_eq!(c.mt_resolve_transfer(acc("khang.testnet"), acc("stalls.hearth.testnet"), Item::Ore, 3), 0);
+    assert_eq!(c.item_balance(acc("khang.testnet"), Item::Ore), 5);
+    // and if the stall contract fails outright, everything comes back too
+    as_caller("oracle.testnet");
+    let _ = c.relay_stall_list(acc("khang.testnet"), 8, Item::Ore, 2, U128(550));
+    resolve_ctx(PromiseResult::Failed);
+    assert_eq!(c.mt_resolve_transfer(acc("khang.testnet"), acc("stalls.hearth.testnet"), Item::Ore, 2), 0);
+    assert_eq!(c.item_balance(acc("khang.testnet"), Item::Ore), 5);
+}
+
+#[test]
+fn npcs_buy_listings_inside_their_budget() {
+    let mut c = with_stalls();
+    as_caller("mike.hearth.testnet");
+    let _ = c.npc_stall_buy(7, U128(1_500));
+    assert_eq!(bal(&c, "stalls.hearth.testnet"), 1_500);
+    assert_eq!(bal(&c, "mike.hearth.testnet"), 6_500);
+}
+
+#[test]
+#[should_panic(expected = "over the daily budget")]
+fn an_npc_cannot_overspend_on_listings() {
+    let mut c = with_stalls();
+    as_caller("mike.hearth.testnet");
+    let _ = c.npc_stall_buy(7, U128(6_001));
+}
+
+#[test]
+#[should_panic(expected = "NPCs only")]
+fn only_npcs_use_npc_stall_buy() {
+    let mut c = with_stalls();
+    as_caller("mallory.testnet");
+    let _ = c.npc_stall_buy(7, U128(100));
+}
+
+#[test]
+#[should_panic(expected = "oracle only")]
+fn only_the_oracle_relays_listings() {
+    let mut c = with_stalls();
+    as_caller("mallory.testnet");
+    let _ = c.relay_stall_list(acc("khang.testnet"), 7, Item::Ore, 3, U128(550));
+}
+
+#[test]
+#[should_panic(expected = "NPCs sign for themselves")]
+fn the_oracle_cannot_list_an_npcs_goods() {
+    let mut c = with_stalls();
+    as_caller("oracle.testnet");
+    let _ = c.relay_stall_list(acc("mike.hearth.testnet"), 7, Item::Ore, 3, U128(550));
+}
+
+#[test]
+#[should_panic(expected = "no stalls contract set")]
+fn nothing_moves_before_a_stall_contract_is_set() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    let _ = c.relay_stall_buy(acc("khang.testnet"), 7, U128(100));
+}
+
+#[test]
+#[should_panic(expected = "not a valid stalls account")]
+fn the_stall_contract_cannot_be_the_oracle() {
+    let mut c = setup();
+    as_caller("owner.testnet");
+    c.set_stalls(acc("oracle.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "owner only")]
+fn only_the_owner_sets_the_stall_contract() {
+    let mut c = setup();
+    as_caller("oracle.testnet");
+    c.set_stalls(acc("evil.testnet"));
+}
+
+#[test]
+#[should_panic(expected = "NPC accounts cannot transfer goods")]
+fn npc_goods_never_leave_through_transfer_call() {
+    let mut c = with_stalls();
+    c.add_item(&acc("mike.hearth.testnet"), Item::Ore, 3);
+    as_caller_yocto("mike.hearth.testnet");
+    let _ = c.mt_transfer_call(acc("stalls.hearth.testnet"), "ore".into(), U128(3), None, None, "{}".into());
 }
 

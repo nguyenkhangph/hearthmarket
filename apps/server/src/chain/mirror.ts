@@ -41,6 +41,11 @@ export interface MirrorOptions {
    * game instead of failing on gas; the next reconcile carries them. 0 = off.
    */
   minNpcNear?: number;
+  /**
+   * Stall board on chain (contract version 6+ with `set_stalls` done): listings escrow the
+   * goods in the stalls contract and purchases pay through it. Off = listings stay in the game.
+   */
+  stalls?: boolean;
   /** a slow or offline chain must not stall the village */
   log?: (line: string) => void;
   now?: () => number;
@@ -79,10 +84,20 @@ const SPENDS_GOODS = new Set(['craft', 'market_sell', 'fill_order', 'world_trade
 
 class HeldBack extends Error {}
 
-const PROOF_METHODS = new Set(['relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order', 'relay_deliver_request', 'mint_badge']);
+const PROOF_METHODS = new Set([
+  'relay_register_player', 'relay_market_buy', 'relay_market_sell', 'relay_place_order', 'relay_cancel_order', 'relay_deliver_request', 'mint_badge',
+  'relay_stall_list', 'relay_stall_buy', 'relay_stall_cancel', 'npc_stall_buy',
+]);
 
-const TGAS: Record<string, number> = { reconcile: 150, post_world_data: 30, relay_place_order: 30 };
+const TGAS: Record<string, number> = {
+  reconcile: 150, post_world_data: 30, relay_place_order: 30,
+  // cross-contract: game contract -> stalls contract -> payouts
+  relay_stall_list: 150, relay_stall_buy: 150, npc_stall_buy: 150, relay_stall_cancel: 100, relay_stall_withdraw: 100,
+};
 const DEFAULT_TGAS = 20;
+
+/** engine methods that act on a listing: they wait until its listing relay landed */
+const STALL_FOLLOWUPS = new Set(['buy_listing', 'cancel_listing', 'npc_stall_buy']);
 
 export class ChainMirror {
   /** last call per signer; each new call waits for it */
@@ -94,6 +109,10 @@ export class ChainMirror {
   private orders = new Map<number, number>();
   /** engine order id -> the operator queue tail that lands its relay (until it has landed) */
   private orderLanding = new Map<number, Promise<unknown>>();
+  /** engine listing id -> on-chain listing id (stalls contract), set once the listing relay landed */
+  private listings = new Map<number, number>();
+  /** engine listing id -> the operator queue tail that lands it (until it has landed) */
+  private listingLanding = new Map<number, Promise<unknown>>();
   /** players whose registration landed / is queued */
   private registered = new Set<string>();
   private registrationQueued = new Set<string>();
@@ -176,9 +195,18 @@ export class ChainMirror {
     const deps = npc && this.opts.batchProduce
       ? this.flushProduce([signer, ...(method === 'hire' && args.seller ? [String(args.seller)] : [])])
       : [];
-    const landing = npc && method === 'fill_order' ? this.orderLanding.get(Number(args.order_id)) : undefined;
+    const landing = npc && method === 'fill_order' ? this.orderLanding.get(Number(args.order_id))
+      : STALL_FOLLOWUPS.has(method) ? this.listingLanding.get(Number(args.listing_id)) : undefined;
     if (landing) deps.push(landing);
     const ph = this.enqueue(calls, false, deps);
+    if (ph && method === 'list_item' && this.opts.operator) {
+      const tail = this.queues.get(this.opts.operator)?.tail;
+      if (tail) {
+        const engineId = Number(args.listing_id);
+        this.listingLanding.set(engineId, tail);
+        void tail.finally(() => this.listingLanding.delete(engineId));
+      }
+    }
     // remember when a player's order relay will have landed, for an NPC fill that follows at once
     if (ph && !npc && method === 'place_order' && this.opts.operator) {
       const tail = this.queues.get(this.opts.operator)?.tail;
@@ -395,6 +423,10 @@ export class ChainMirror {
             ? [call('world_trade', { item, qty, import: true }), call('market_sell', { item, qty, min_price: lenientMin(p) })]
             : [call('market_buy', { item, qty, max_price: lenientMax(p) }), call('world_trade', { item, qty, import: false })];
         }
+        case 'npc_stall_buy': {
+          const id = this.stallListingId(Number(args.listing_id));
+          return id ? [call('npc_stall_buy', { listing_id: id, amount: String(args.amount) })] : null;
+        }
         default:
           return null; // stall trades and the like stay in the engine
       }
@@ -423,6 +455,24 @@ export class ChainMirror {
         if (id) relay = this.op('relay_cancel_order', { player, order_id: id });
         break;
       }
+      case 'list_item':
+        if (this.stallsOn) {
+          const engineId = Number(args.listing_id);
+          const chainId = this.chainOrderId(engineId);
+          relay = this.op('relay_stall_list', { player, listing_id: chainId, item: args.item, qty, price: String(args.price) });
+          relay.onOk = () => this.listings.set(engineId, chainId);
+        }
+        break;
+      case 'buy_listing': {
+        const id = this.stallListingId(Number(args.listing_id));
+        if (id) relay = this.op('relay_stall_buy', { player, listing_id: id, amount: String(args.amount) });
+        break;
+      }
+      case 'cancel_listing': {
+        const id = this.stallListingId(Number(args.listing_id));
+        if (id) relay = this.op('relay_stall_cancel', { player, listing_id: id });
+        break;
+      }
       case 'deliver_request':
         if (this.contractVersion >= 4) {
           relay = this.op('relay_deliver_request', { player, npc: args.npc, item: args.item, qty, price: args.price, bonus: String(args.bonus) });
@@ -431,6 +481,35 @@ export class ChainMirror {
     }
     if (!relay) return null;
     return this.registrationQueued.has(player) ? [relay] : [this.registration(player), relay];
+  }
+
+  /** stall board on chain: flag on and a contract that knows the stalls contract */
+  get stallsOn() {
+    return !!this.opts.stalls && this.contractVersion >= 6 && !!this.opts.operator;
+  }
+
+  /**
+   * The chain id of a listing whose relay landed (or is about to: callers wait for it). Not
+   * gated on the flag: a listing already in escrow must still be bought or cancelled on chain
+   * after STALLS_ONCHAIN is switched off.
+   */
+  private stallListingId(engineId: number): number | undefined {
+    if (this.contractVersion < 6 || !this.opts.operator) return undefined;
+    return this.listings.get(engineId) ?? (this.listingLanding.has(engineId) ? this.chainOrderId(engineId) : undefined);
+  }
+
+  /**
+   * The village is rebuilt from its seed on a restart, so listings escrowed by an earlier run
+   * have no listing in the game any more: send their goods home (`relay_stall_cancel`).
+   */
+  sweepStalls(open: { id: number; seller: string }[]): number {
+    if (this.contractVersion < 6 || !this.opts.operator) return 0;
+    let n = 0;
+    for (const l of open.slice(0, 50)) {
+      if ([...this.listings.values()].includes(l.id)) continue;
+      if (this.enqueue([this.op('relay_stall_cancel', { player: l.seller, listing_id: l.id })], true)) n++;
+    }
+    return n;
   }
 
   /** Start gold once per player; the contract ignores repeats. */

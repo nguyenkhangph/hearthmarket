@@ -8,6 +8,10 @@
  *   npm run setup:testnet -- --operator-only --split-oracle
  *                                              # version 5+: move the oracle role to ops.<contract>,
  *                                              # a separate account, so the server's key is not the owner's
+ *   npm run setup:testnet -- --stalls stalls-test.hearthmarket.testnet
+ *                                              # version 6+: point the game contract at a deployed stalls
+ *                                              # contract (set_stalls), after refreshing the keys so the
+ *                                              # NPCs and the operator may sign the stall methods
  *
  * Needs in .env:
  *   HEARTH_CONTRACT=your-name.testnet            (the deployed contract account)
@@ -42,6 +46,9 @@ const envPath = join(root, '.env');
 const dry = process.argv.includes('--dry-run');
 const operatorOnly = process.argv.includes('--operator-only');
 const splitOracle = process.argv.includes('--split-oracle');
+const stallsArg = process.argv.indexOf('--stalls');
+const stallsAccount = stallsArg > 0 ? process.argv[stallsArg + 1] ?? '' : '';
+if (stallsArg > 0 && !/^[a-z0-9._-]+\.(testnet|near)$/.test(stallsAccount)) fail('--stalls needs the stalls contract account, e.g. --stalls stalls-test.hearthmarket.testnet');
 
 const contract = process.env.HEARTH_CONTRACT ?? '';
 const ownerKey = (process.env.OWNER_PRIVATE_KEY ?? '') as KeyPairString;
@@ -129,7 +136,8 @@ try {
     fail(`${contract} has no initialised hearth contract. Deploy it and call new(...) first (docs/testnet.md).`);
   }
 }
-if (!['2', '3', '4', '5'].includes(version)) fail(`expected contract version 2 to 5, found "${version}". Rebuild and redeploy contracts/hearth.`);
+if (!['2', '3', '4', '5', '6'].includes(version)) fail(`expected contract version 2 to 6, found "${version}". Rebuild and redeploy contracts/hearth.`);
+if (stallsAccount && Number(version) < 6) fail('--stalls needs contract version 6 (set_stalls). Deploy it first (docs/testnet.md, "Upgrade 5 → 6").');
 if (splitOracle && Number(version) < 5) fail('--split-oracle needs contract version 5 (set_oracle). Deploy it first (docs/testnet.md, "Upgrade").');
 let [, oracle] = (await view<[string, string]>('get_roles', {})) ?? ['', ''];
 const opsAccount = `ops.${contract}`;
@@ -194,6 +202,17 @@ const opKey = await replaceKeys(opAccountId === contract ? owner : new Account(o
 if (opKey) {
   env.ORACLE_ACCOUNT = opAccountId;
   env.ORACLE_KEY = opKey;
+}
+
+// the stall board: the stalls contract must be initialised with this game contract as its token
+if (stallsAccount) {
+  console.log(`Stalls (${stallsAccount})`);
+  const token = await provider.callFunction({ contractId: stallsAccount, method: 'get_token', args: {} }).catch(() => undefined);
+  if (token !== contract) fail(`${stallsAccount} is not a stalls contract for ${contract} (get_token = ${JSON.stringify(token)}). Deploy contracts/stalls and call new({"token":"${contract}"}) first.`);
+  const current = await view<string | null>('get_stalls', {});
+  if (current === stallsAccount) console.log('  already set');
+  else await step(`set_stalls(${stallsAccount}) with the owner key${current ? ` (was ${current})` : ''}`, () => owner.callFunction({ contractId: contract, methodName: 'set_stalls', args: { account_id: stallsAccount } }));
+  console.log('  Then set STALLS_ONCHAIN=1 on the server.');
 }
 
 if (dry) {

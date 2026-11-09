@@ -1,0 +1,4 @@
+# near-sdk 5.x in this lockfile needs rustc 1.95; rustup installs it automatically here
+[toolchain]
+channel = "1.95.0"
+targets = ["wasm32-unknown-unknown"]

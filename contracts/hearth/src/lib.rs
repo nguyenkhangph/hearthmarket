@@ -37,6 +37,11 @@ pub const AUTO_ORDER_ID_START: u64 = 1_000_000_000;
 pub const MAX_RECONCILE_ENTRIES: usize = 120;
 
 const GAS_FOR_FT_ON_TRANSFER: Gas = Gas::from_tgas(25);
+/// the stall contract pays out (gold and goods) from inside its receiver call
+const GAS_FOR_STALL_RECEIVER: Gas = Gas::from_tgas(60);
+const GAS_FOR_STALL_CALL: Gas = Gas::from_tgas(50);
+/// raw storage key of the stall contract account (version 6 keeps the stored struct as it was)
+const STALLS_KEY: &[u8] = b"T";
 const GAS_FOR_RESOLVE: Gas = Gas::from_tgas(10);
 
 #[near(serializers = [json, borsh])]
@@ -265,6 +270,20 @@ pub struct JsonToken {
 const GOLD_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23e8b33a' stroke='%23845a12'/%3E%3Ctext x='8' y='11.5' font-size='9' text-anchor='middle' fill='%23845a12' font-family='monospace'%3EG%3C/text%3E%3C/svg%3E";
 const BADGE_ICON: &str = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M8 1l2 4 4.5.6-3.2 3.1.8 4.5L8 11l-4.1 2.2.8-4.5L1.5 5.6 6 5z' fill='%23e8763a' stroke='%23843a12'/%3E%3C/svg%3E";
 
+#[ext_contract(ext_mt_receiver)]
+#[allow(dead_code)]
+trait MultiTokenReceiver {
+    fn mt_on_transfer(&mut self, sender_id: AccountId, previous_owner_ids: Vec<AccountId>, token_ids: Vec<String>, amounts: Vec<U128>, msg: String) -> PromiseOrValue<Vec<U128>>;
+}
+
+/// The player-stall contract (version 6): listings with goods and gold in escrow.
+#[ext_contract(ext_stalls)]
+#[allow(dead_code)]
+trait StallBook {
+    fn cancel_for(&mut self, seller: AccountId, listing_id: u64);
+    fn withdraw_for(&mut self, account_id: AccountId);
+}
+
 #[ext_contract(ext_ft_receiver)]
 #[allow(dead_code)]
 trait FungibleTokenReceiver {
@@ -420,7 +439,9 @@ impl Hearth {
         // 4: relay_deliver_request (NPC daily requests); same stored state (no migrate)
         // 5: set_oracle (oracle key apart from the owner), self-custody players that `reconcile`
         //    can no longer touch, a `reconcile` summary event; same stored state (no migrate)
-        "5".into()
+        // 6: player stalls with escrow in a separate contract (`set_stalls`, `mt_transfer_call`,
+        //    `relay_stall_*`, `npc_stall_buy`); same stored state (no migrate)
+        "6".into()
     }
 
     // ------------------------------------------------------------------ roles
@@ -889,6 +910,132 @@ impl Hearth {
             "game_day": game_day, "gold_minted": U128(minted), "gold_burned": U128(burned),
             "item_balances_set": item_sets, "self_custody_skipped": skipped,
         }));
+    }
+
+    // ------------------------------------------------------------------ player stalls (version 6)
+    // Listings live in a separate contract (contracts/stalls). Goods and gold move there with
+    // NEP-245 / NEP-141 transfer-calls, so that contract holds them in escrow until a sale or a
+    // cancel, and refunds anything it does not accept. The stored struct is unchanged: the
+    // stall account sits under a raw storage key.
+
+    /// Owner only: which contract holds player listings. Never an NPC, the owner, the oracle or this contract.
+    pub fn set_stalls(&mut self, account_id: AccountId) {
+        self.assert_owner();
+        require!(
+            !self.npcs.contains_key(&account_id) && account_id != self.owner && account_id != self.oracle && account_id != env::current_account_id(),
+            "not a valid stalls account"
+        );
+        env::storage_write(STALLS_KEY, account_id.as_bytes());
+        emit("hearth", "1.0.0", "stalls_set", json!({ "account_id": account_id }));
+    }
+
+    pub fn get_stalls(&self) -> Option<AccountId> {
+        env::storage_read(STALLS_KEY).and_then(|r| String::from_utf8(r).ok()).and_then(|s| s.parse().ok())
+    }
+
+    fn stalls_account(&self) -> AccountId {
+        self.get_stalls().unwrap_or_else(|| env::panic_str("no stalls contract set"))
+    }
+
+    /// Moves goods between holders (a transfer: no mint/burn events).
+    fn move_items(&mut self, from: &AccountId, to: &AccountId, item: Item, qty: u32, memo: &str) {
+        require!(from != to, "sender and receiver are the same");
+        let left = self.item_of(from, item) as i64 - qty as i64;
+        require!(left >= 0, "not enough goods");
+        self.items.insert((from.clone(), item), left as u32);
+        let to_q = self.item_of(to, item) + qty;
+        self.items.insert((to.clone(), item), to_q);
+        emit("nep245", "1.0.0", "mt_transfer", json!({
+            "old_owner_id": from, "new_owner_id": to, "token_ids": [item.token_id()], "amounts": [qty.to_string()], "memo": memo
+        }));
+    }
+
+    fn items_transfer_call(&mut self, sender: AccountId, receiver: AccountId, item: Item, qty: u32, msg: String, gas: Gas) -> Promise {
+        Self::check_qty(qty);
+        self.move_items(&sender, &receiver, item, qty, "transfer_call");
+        ext_mt_receiver::ext(receiver.clone())
+            .with_static_gas(gas)
+            .mt_on_transfer(sender.clone(), vec![sender.clone()], vec![item.token_id().into()], vec![U128(qty as u128)], msg)
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_FOR_RESOLVE).mt_resolve_transfer(sender, receiver, item, qty))
+    }
+
+    fn gold_transfer_call(&mut self, sender: AccountId, receiver: AccountId, amount: Gold, msg: String, gas: Gas) -> Promise {
+        self.transfer_gold(&sender, &receiver, amount, Some("transfer_call".into()));
+        ext_ft_receiver::ext(receiver.clone())
+            .with_static_gas(gas)
+            .ft_on_transfer(sender.clone(), U128(amount), msg)
+            .then(Self::ext(env::current_account_id()).with_static_gas(GAS_FOR_RESOLVE).ft_resolve_transfer(sender, receiver, U128(amount)))
+    }
+
+    /// NEP-245 transfer-call for one item. Players only (NPC goods never leave through here).
+    #[payable]
+    pub fn mt_transfer_call(&mut self, receiver_id: AccountId, token_id: String, amount: U128, approval: Option<(AccountId, u64)>, memo: Option<String>, msg: String) -> Promise {
+        near_sdk::assert_one_yocto();
+        let _ = memo;
+        let sender = env::predecessor_account_id();
+        require!(!self.npcs.contains_key(&sender), "NPC accounts cannot transfer goods");
+        require!(approval.is_none(), "approvals are not supported");
+        require!(amount.0 > 0 && amount.0 <= MAX_QTY as u128, "invalid amount");
+        let item = Self::mt_item(&token_id);
+        self.items_transfer_call(sender, receiver_id, item, amount.0 as u32, msg, GAS_FOR_FT_ON_TRANSFER)
+    }
+
+    /// Returns how many the receiver kept; moves the rest back to the sender.
+    #[private]
+    pub fn mt_resolve_transfer(&mut self, sender_id: AccountId, receiver_id: AccountId, item: Item, qty: u32) -> u32 {
+        let unused = match env::promise_result_checked(0, 256) {
+            Ok(v) => serde_json::from_slice::<Vec<U128>>(&v).ok().and_then(|u| u.first().map(|x| (x.0 as u32).min(qty))).unwrap_or(qty),
+            Err(_) => qty,
+        };
+        let refund = unused.min(self.item_of(&receiver_id, item));
+        if refund > 0 {
+            self.move_items(&receiver_id, &sender_id, item, refund, "refund");
+        }
+        qty - refund
+    }
+
+    /// The operator lists a wallet-less player's goods: they move into the stall contract's escrow.
+    pub fn relay_stall_list(&mut self, player: AccountId, listing_id: u64, item: Item, qty: u32, price: U128) -> Promise {
+        self.assert_oracle();
+        self.assert_relayable(&player);
+        require!(price.0 > 0 && price.0 <= 1_000_000, "price out of range");
+        let st = self.stalls_account();
+        let msg = json!({ "list": { "id": listing_id, "price": price } }).to_string();
+        self.items_transfer_call(player, st, item, qty, msg, GAS_FOR_STALL_RECEIVER)
+    }
+
+    /// The operator buys a listing for a player: their gold goes to the stall contract, which
+    /// pays the seller and hands over the goods, or refunds it all.
+    pub fn relay_stall_buy(&mut self, player: AccountId, listing_id: u64, amount: U128) -> Promise {
+        self.assert_oracle();
+        self.assert_relayable(&player);
+        let st = self.stalls_account();
+        let msg = json!({ "buy": { "id": listing_id } }).to_string();
+        self.gold_transfer_call(player, st, amount.0, msg, GAS_FOR_STALL_RECEIVER)
+    }
+
+    /// An NPC buys a player's listing with its own key, inside its daily budget. The only way an
+    /// NPC's gold reaches another contract, and only the registered stall contract.
+    pub fn npc_stall_buy(&mut self, listing_id: u64, amount: U128) -> Promise {
+        let npc = env::predecessor_account_id();
+        require!(self.npcs.contains_key(&npc), "NPCs only");
+        self.assert_npc_spend(&npc, amount.0);
+        let st = self.stalls_account();
+        let msg = json!({ "buy": { "id": listing_id } }).to_string();
+        self.gold_transfer_call(npc, st, amount.0, msg, GAS_FOR_STALL_RECEIVER)
+    }
+
+    /// The operator cancels a player's listing; the stall contract sends the goods back.
+    pub fn relay_stall_cancel(&mut self, player: AccountId, listing_id: u64) -> Promise {
+        self.assert_oracle();
+        self.assert_relayable(&player);
+        ext_stalls::ext(self.stalls_account()).with_static_gas(GAS_FOR_STALL_CALL).cancel_for(player, listing_id)
+    }
+
+    /// The operator asks the stall contract to pay out what it owes an account (to that account only).
+    pub fn relay_stall_withdraw(&mut self, account_id: AccountId) -> Promise {
+        self.assert_oracle();
+        ext_stalls::ext(self.stalls_account()).with_static_gas(GAS_FOR_STALL_CALL).withdraw_for(account_id)
     }
 
     // ------------------------------------------------------------------ trust boundary

@@ -20,6 +20,9 @@
     "contract:test": "cd contracts/hearth && cargo test",
     "contract:build": "cd contracts/hearth && cargo near build non-reproducible-wasm",
     "setup:testnet": "tsx --env-file-if-exists=.env scripts/setup-testnet.ts",
+    "stalls:smoke": "tsx --env-file-if-exists=.env scripts/stalls-smoke.ts",
+    "stalls:test": "cd contracts/stalls && cargo test",
+    "stalls:build": "cd contracts/stalls && cargo near build non-reproducible-wasm",
     "world:check": "npm run world:check -w @hearth/server",
     "llm:check": "npm run llm:check -w @hearth/server"
   },

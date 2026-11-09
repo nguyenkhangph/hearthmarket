@@ -1,4 +1,5 @@
 import { noteDelivery, noteTrade } from './regard.ts';
+import type { Listing } from './types.ts';
 import {
   ITEM_DEFS, ITEMS, NPC_DEFS, NPCS, NEAR_CONFIG, RECIPES, RECIPE_YIELD, RULES, AI_GUILDS, QUESTS,
   type ItemId, type NpcId, type QuestId,
@@ -194,9 +195,11 @@ export class Village {
       case 7: this.settleDeals(); break;
       case 8: this.buyInputs(); break;
       case 10: this.fillOrders(); break;
+      case 11: this.npcBuyListings(); break;
       case 12: this.produceAll(); break;
       case 13: this.fillOrders(); break;
       case 15: this.sellSurplus(); break;
+      case 16: this.npcBuyListings(); this.expireListings(); break;
       case 17: this.brunoTrade(); break;
       case 19: this.adventurers(); break;
       case 20: this.aiTick?.(this); this.tallyVotes(); break;
@@ -291,6 +294,74 @@ export class Village {
       const r: NpcRequest = { id: this.s.nextId++, npc: w.npc, item: w.item, qty, price, bonus: RULES.requestBonus, day: this.day, text };
       this.s.requests.push(r);
       this.feed('quest', `${NPC_DEFS[w.npc].name} asks: "${text}" · pays ${fmt(price)} each + ${fmt(r.bonus, 0)} bonus`, w.npc);
+    }
+  }
+
+  // ---------------------------------------------------------------- stall board (player listings)
+  openListings() {
+    return (this.s.listings ?? []).filter((l) => l.status === 'open');
+  }
+
+  /** The buyer has paid `price × qty` already; the seller gets it, the listing closes. */
+  private sellListing(l: Listing, buyer: { kind: 'npc' | 'player'; id: string }, tx: string) {
+    const seller = this.s.players[l.seller];
+    const total = l.price * l.qty;
+    if (seller) seller.gold += total;
+    l.status = 'sold';
+    l.buyer = buyer;
+    l.saleTx = tx;
+    this.s.ledger.volume += total;
+    const who = buyer.kind === 'npc' ? NPC_DEFS[buyer.id as NpcId].name : this.s.players[buyer.id]?.name ?? buyer.id;
+    if (buyer.kind === 'npc' && seller) noteTrade(this, buyer.id as NpcId, seller.id, total);
+    this.feed('stall', `${who} bought ${seller?.name ?? 'a player'}'s ${l.qty} ${l.item} from the stall board at ${fmt(l.price, 2)} · +${fmt(total)} gold`, buyer.kind === 'npc' ? (buyer.id as NpcId) : undefined, tx);
+  }
+
+  /** Goods back to the seller (their cancel, or the board clearing old listings). */
+  private cancelListing(l: Listing, why: 'cancelled' | 'expired'): string {
+    const seller = this.s.players[l.seller];
+    if (seller) seller.stock[l.item] += l.qty;
+    l.status = 'cancelled';
+    const tx = this.tx(playerSigner(l.seller), 'cancel_listing', { listing_id: l.id });
+    this.feed('stall', `${seller?.name ?? 'A player'}'s ${l.qty} ${l.item} ${why === 'expired' ? `went back home after ${RULES.listingDays} days on the board` : 'came off the stall board'}`, undefined, tx);
+    return tx;
+  }
+
+  private expireListings() {
+    for (const l of this.openListings()) if (this.day - l.day >= RULES.listingDays) this.cancelListing(l, 'expired');
+  }
+
+  /**
+   * 11:00 and 16:00: NPCs look at the stall board. A crafter buys inputs it needs today when a
+   * listing beats the market's ask; Bruno buys anything priced at least 5% under what the market
+   * pays, to resell. Whole listings only, inside the same spending guard as every NPC trade.
+   */
+  private npcBuyListings() {
+    for (const l of [...this.openListings()].sort((a, b) => a.price / midPrice(a.item, this.s.market.stock[a.item]) - b.price / midPrice(b.item, this.s.market.stock[b.item]))) {
+      const total = l.price * l.qty;
+      const ask = askPrice(l.item, this.s.market.stock[l.item]);
+      const bid = bidPrice(l.item, this.s.market.stock[l.item]);
+      const crafter = NPCS.find((id) => {
+        if (id === 'bruno') return false;
+        const n = this.s.npcs[id];
+        const missing = (this.inputNeed(n)[l.item] ?? 0) - n.stock[l.item];
+        return missing > 0 && l.qty <= missing + 2 && l.price < ask && n.gold - total >= RULES.npcListingReserve;
+      });
+      const brunoBuys = l.price <= bid * 0.95 && this.s.npcs.bruno.gold - total >= g(60);
+      const id = crafter ?? (brunoBuys ? 'bruno' : undefined);
+      if (!id) continue;
+      const n = this.s.npcs[id];
+      if (!this.guarded(n, { type: 'market_buy', item: l.item, qty: l.qty, maxPrice: l.price })) continue;
+      n.gold -= total;
+      n.spentToday += total;
+      n.stock[l.item] += l.qty;
+      const tx = this.tx(NPC_DEFS[id].account, 'npc_stall_buy', { listing_id: l.id, amount: total });
+      this.sellListing(l, { kind: 'npc', id }, tx);
+      this.diary({
+        npc: id, goal: id === 'bruno' ? 'buy cheap, resell to the market' : `inputs for today's ${NPC_DEFS[id].produces[0]}`,
+        saw: `${this.s.players[l.seller]?.name ?? 'A player'} lists ${l.qty} ${l.item} at ${fmt(l.price, 2)}; market ask ${fmt(ask, 2)}, bid ${fmt(bid, 2)}`,
+        think: id === 'bruno' ? 'cheaper than the market pays: a safe resale' : 'cheaper than buying from the market',
+        act: `npc_stall_buy listing #${l.id} for ${fmt(total)}`, tx, guard: 'ok: market_buy within the daily budget', by: 'rules',
+      });
     }
   }
 
@@ -1342,6 +1413,41 @@ export class Village {
         this.feed('order', `${this.ownerName(pay.who)} ordered ${a.qty} ${a.item} from ${seller} · max ${fmt(a.maxPrice)} each`, this.producerOf(a.item), tx);
         if (a.item === 'sword' && pay.who.kind === 'player') this.completeQuest(p, 'order-sword');
         return { ok: true, tx, info: `order #${o.id} placed, ${fmt(escrow)} gold locked` };
+      }
+      case 'list_item': {
+        // goods go into escrow at a fixed price; an NPC or another player buys the whole listing
+        if (!ITEMS.includes(a.item)) return { ok: false, reason: 'unknown item' };
+        if (!Number.isInteger(a.price)) return { ok: false, reason: 'price in whole centigold' };
+        if (!Number.isInteger(a.qty) || a.qty < 1 || a.qty > RULES.listingMaxQty) return { ok: false, reason: `list 1-${RULES.listingMaxQty} units` };
+        const mid = midPrice(a.item, this.s.market.stock[a.item]);
+        if (!(a.price >= Math.ceil(mid * 0.5) && a.price <= mid * 2)) return { ok: false, reason: `price must be 50-200% of the market (${fmt(mid, 2)})` };
+        if (p.stock[a.item] < a.qty) return { ok: false, reason: `you have ${p.stock[a.item]} ${a.item}` };
+        const mine = (this.s.listings ?? []).filter((l) => l.seller === p.id && l.status === 'open').length;
+        if (mine >= RULES.listingsPerPlayer) return { ok: false, reason: `at most ${RULES.listingsPerPlayer} open listings` };
+        p.stock[a.item] -= a.qty;
+        const l: Listing = { id: this.s.nextId++, seller: p.id, item: a.item, qty: a.qty, price: a.price, status: 'open', day: this.day };
+        (this.s.listings ??= []).push(l);
+        l.tx = this.tx(signer, 'list_item', { listing_id: l.id, item: a.item, qty: a.qty, price: a.price });
+        this.feed('stall', `${p.name} lists ${a.qty} ${a.item} on the stall board at ${fmt(a.price, 2)} each`, undefined, l.tx);
+        return { ok: true, tx: l.tx, info: `listed: ${a.qty} ${a.item} at ${fmt(a.price, 2)}` };
+      }
+      case 'buy_listing': {
+        const l = (this.s.listings ?? []).find((x) => x.id === a.id);
+        if (!l || l.status !== 'open') return { ok: false, reason: 'that listing is gone' };
+        if (l.seller === p.id) return { ok: false, reason: 'you cannot buy your own listing' };
+        const total = l.price * l.qty;
+        if (p.gold < total) return { ok: false, reason: `you need ${fmt(total)} gold` };
+        p.gold -= total;
+        const tx = this.tx(signer, 'buy_listing', { listing_id: l.id, amount: total });
+        this.sellListing(l, { kind: 'player', id: p.id }, tx);
+        p.stock[l.item] += l.qty;
+        return { ok: true, tx, info: `bought ${l.qty} ${l.item} for ${fmt(total)}` };
+      }
+      case 'cancel_listing': {
+        const l = (this.s.listings ?? []).find((x) => x.id === a.id);
+        if (!l || l.status !== 'open') return { ok: false, reason: 'that listing is not open' };
+        if (l.seller !== p.id) return { ok: false, reason: 'not your listing' };
+        return { ok: true, tx: this.cancelListing(l, 'cancelled') };
       }
       case 'cancel_order': {
         const o = this.s.orders.find((x) => x.id === a.orderId && x.status === 'open');

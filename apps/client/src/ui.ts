@@ -46,6 +46,8 @@ export class Ui {
   private panel: PanelId = null;
   private npc: NpcId = 'theo';
   private orderForm = { item: 'sword' as ItemId, qty: 2, maxPrice: 0, deadline: 2, fromGuild: false };
+  /** stall board form: price 0 = fill in the village price */
+  private listForm = { item: 'wheat' as ItemId, qty: 1, price: 0 };
   private haggleLog: { who: 'me' | 'npc' | 'sys' | 'bad' | 'ok'; text: string; html?: string }[] = [];
   private redBusy = false;
   /** selected red-team attack (index into RED_TEAM_ATTACKS), kept across re-renders */
@@ -428,7 +430,49 @@ export class Ui {
     ${myOrders.length ? `<h4>Your orders</h4>${myOrders.map((o) => `<div class="kvrow small"><span>#${o.id} ${o.qty}× ${o.item} · max ${fmt(o.maxPrice)}</span><span>${o.status === 'open' ? `${o.filled}/${o.qty} · due day ${o.deadlineDay} <button data-act="cancel" data-id="${o.id}">Cancel</button>` : o.status}</span></div>`).join('')}` : ''}
     <p class="muted small">Every trade shows where it stands (simulated, queued, on chain, failed, or kept in the game and reconciled daily): <button class="linkish" data-act="prove">⛓ Prove on NEAR</button></p>
   </section>
-</div>`;
+</div>
+${this.stallBoard()}`;
+  }
+
+  /** Player listings: goods in escrow at a fixed price; NPCs check the board at 11:00 and 16:00. */
+  private stallBoard() {
+    const v = this.v;
+    const me = this.me;
+    const lf = this.listForm;
+    const held = ITEMS.filter((i) => (me?.stock[i] ?? 0) > 0);
+    if (held.length && !held.includes(lf.item)) {
+      lf.item = held[0];
+      lf.price = 0;
+    }
+    const mid = midPrice(lf.item, v.s.market.stock[lf.item]);
+    const price = lf.price || mid; // follows the market until the player types a price
+    lf.qty = Math.max(1, Math.min(lf.qty, RULES.listingMaxQty, me?.stock[lf.item] || 1));
+    const open = (v.s.listings ?? []).filter((l) => l.status === 'open');
+    const recent = (v.s.listings ?? []).filter((l) => l.status === 'sold' && v.day - l.day <= 2).slice(-4).reverse();
+    const nameOf = (id: string) => (id === me?.id ? 'you' : esc(v.s.players[id]?.name ?? id));
+    const buyerOf = (l: (typeof recent)[number]) => (l.buyer?.kind === 'npc' ? NPC_DEFS[l.buyer.id as NpcId].name : l.buyer ? nameOf(l.buyer.id) : '?');
+    const vsMarket = (item: ItemId, price: number) => {
+      const p = price / midPrice(item, v.s.market.stock[item]) - 1;
+      return `<span class="${p < 0 ? 'down' : p > 0 ? 'up' : ''}">${pct(p)}</span>`;
+    };
+    const onChain = this.src.chain === 'near';
+    return `
+<section class="pcard stall-board">
+  <h3>Stall board · players sell to NPCs</h3>
+  <p class="muted small">List goods at your price. Crafters buy a listing when it beats the market's ask and they need it today; Bruno buys anything at least 5% under what the market pays, to resell. They check the board at 11:00 and 16:00. Unsold listings go home after ${RULES.listingDays} days. ${onChain ? 'With the stalls contract on, your goods wait in its escrow and the buyer pays through it.' : ''}</p>
+  ${open.length ? `<table class="mkt"><thead><tr><th>Seller</th><th>Goods</th><th>Each</th><th>vs market</th><th>Total</th><th></th></tr></thead><tbody>${open.map((l) => `
+    <tr><td>${nameOf(l.seller)}</td><td>${icon(l.item)} ${l.qty} ${esc(l.item)}</td><td>${fmt(l.price, 2)}</td><td>${vsMarket(l.item, l.price)}</td><td>${fmt(l.price * l.qty)}</td>
+    <td>${l.seller === me?.id ? `<button data-act="unlist" data-id="${l.id}">Cancel</button>` : me ? `<button data-act="buy-listing" data-id="${l.id}" ${me.gold >= l.price * l.qty ? '' : 'disabled'}>Buy all</button>` : ''} ${l.tx ? this.txState(l.tx) : ''}</td></tr>`).join('')}</tbody></table>`
+    : '<div class="muted small">No open listings.</div>'}
+  ${recent.length ? `<div class="small">${recent.map((l) => `<div class="kvrow"><span>${buyerOf(l)} bought ${nameOf(l.seller)}'s ${l.qty} ${esc(l.item)} at ${fmt(l.price, 2)}</span><span>${l.saleTx ? this.txState(l.saleTx) : ''}</span></div>`).join('')}</div>` : ''}
+  ${me ? held.length ? `
+  <form class="kv row-form">
+    <label>Item <select name="lItem">${held.map((i) => `<option value="${i}" ${i === lf.item ? 'selected' : ''}>${ITEM_DEFS[i].name} (${me.stock[i]})</option>`).join('')}</select></label>
+    <label>Quantity <input name="lQty" type="number" min="1" max="${Math.min(RULES.listingMaxQty, me.stock[lf.item])}" value="${lf.qty}"></label>
+    <label>Price each <input name="lPrice" type="number" min="${fmt(Math.ceil(mid * 0.5))}" max="${fmt(mid * 2)}" step="0.01" value="${fmt(price, 2)}"></label>
+    <div class="kvrow"><span>Market now ${fmt(mid, 2)} · you ask ${vsMarket(lf.item, price)}</span><button class="primary" data-act="list">List ${lf.qty} ${esc(lf.item)}</button></div>
+  </form>` : '<div class="muted small">Buy or make something first, then list it here.</div>' : ''}
+</section>`;
   }
 
   /** Every transaction that touched the player: their own (relayed) calls and NPC fills of their orders. */
@@ -898,7 +942,12 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
       f.item = t.value as ItemId;
       f.maxPrice = Math.round(midPrice(f.item, this.v.s.market.stock[f.item]) * 1.1);
       this.renderPanel(true);
-    } else if (t.name === 'qty') f.qty = Math.max(1, Math.min(50, Number(t.value) || 1));
+    } else if (t.name === 'lItem') {
+      this.listForm = { item: t.value as ItemId, qty: 1, price: 0 };
+      this.renderPanel(true);
+    } else if (t.name === 'lQty') this.listForm.qty = Math.max(1, Math.min(RULES.listingMaxQty, Number(t.value) || 1));
+    else if (t.name === 'lPrice') this.listForm.price = g(Number(t.value) || 0);
+    else if (t.name === 'qty') f.qty = Math.max(1, Math.min(50, Number(t.value) || 1));
     else if (t.name === 'maxPrice') f.maxPrice = g(Number(t.value) || 0);
     else if (t.name === 'deadline') f.deadline = Number(t.value);
     else if (t.name === 'fromGuild') f.fromGuild = t.value === '1';
@@ -935,6 +984,16 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
         break;
       }
       case 'cancel': await this.act({ type: 'cancel_order', orderId: Number(b.dataset.id) }, 'Order cancelled, gold refunded'); break;
+      case 'list': {
+        const lf = this.listForm;
+        lf.qty = Math.max(1, Number(this.val('lQty')) || lf.qty);
+        const price = Math.round(g(Number(this.val('lPrice')) || 0));
+        await this.act({ type: 'list_item', item: lf.item, qty: lf.qty, price });
+        lf.price = 0;
+        break;
+      }
+      case 'unlist': await this.act({ type: 'cancel_listing', id: Number(b.dataset.id) }, 'Listing cancelled, goods back'); break;
+      case 'buy-listing': await this.act({ type: 'buy_listing', id: Number(b.dataset.id) }); break;
       case 'join': await this.act({ type: 'join_guild', guild: b.dataset.id! }); break;
       case 'create': await this.act({ type: 'create_guild', name: this.val('gname') }); break;
       case 'deposit': await this.act({ type: 'deposit', amount: g(Number(this.val('deposit')) || 0) }, 'Deposited'); break;

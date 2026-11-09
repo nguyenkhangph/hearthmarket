@@ -317,3 +317,70 @@ npm run setup:testnet -- --operator-only --split-oracle
 `get_version` must print `"5"`. With `--split-oracle` the script creates `ops.hearthmarket.testnet` (3 NEAR from the contract account, for relay and reconcile gas), calls `set_oracle` with the owner key, deletes the old operator key from the contract account, and writes a new function-call key for `ops.hearthmarket.testnet` (it now includes `relay_self_custody`) into `.env` as `ORACLE_ACCOUNT` and `ORACLE_KEY` (not printed). **Copy both to Railway** (Variables) and redeploy; relays fail until the server has them. The log then says `contract hearthmarket.testnet version 5`, and `get_roles` returns the owner and `ops.hearthmarket.testnet`.
 
 Without `--split-oracle`, `--operator-only` only refreshes the operator key on the contract account; it must be refreshed either way, because the key needs `relay_self_custody`.
+
+## Upgrade from version 5 to 6 (stall board escrow)
+
+Version 6 adds the NEP-245 `mt_transfer_call` (goods into a receiver contract, unused goods come back), relays for the stall board (`relay_stall_list`, `relay_stall_buy`, `relay_stall_cancel`, `relay_stall_withdraw`), `npc_stall_buy` (an NPC buys a listing inside its daily budget; NPCs still never call `ft_transfer`) and `set_stalls` / `get_stalls`. The stalls themselves are a **separate contract** (`contracts/stalls`): it holds listed goods in escrow, takes the buyer's gold, and pays the seller and the buyer at once. Same stored state in the game contract, so **no migrate call**, and the server keeps listings in the game until `STALLS_ONCHAIN=1`.
+
+**1. Back up version 5 first** (the rollback is the old wasm: version 6 only adds one raw storage key that version 5 ignores):
+
+```powershell
+mkdir backup -ErrorAction SilentlyContinue
+copy contracts\hearth\target\near\hearth.wasm backup\hearth-v5.wasm    # before building v6
+near contract view-storage hearthmarket.testnet all as-json network-config testnet now > backup\hearthmarket-v5-state.json
+foreach ($m in 'get_economy','get_roles','get_market','get_open_orders') { near contract call-function as-read-only hearthmarket.testnet $m json-args '{}' network-config testnet now > "backup\$m.json" }
+```
+
+If `view-storage` refuses (state too large for the RPC), the view files plus the wasm are still enough to roll back. Keep `backup\` out of git (it is in `.gitignore`).
+
+**2. Deploy version 6** (same as every upgrade):
+
+```powershell
+cd contracts\hearth
+cargo near build non-reproducible-wasm --no-abi
+near contract deploy hearthmarket.testnet use-file target\near\hearth.wasm without-init-call network-config testnet sign-with-keychain send
+near contract call-function as-read-only hearthmarket.testnet get_version json-args '{}' network-config testnet now   # "6"
+cd ..\..
+```
+
+The village keeps running as before: nothing calls the new methods yet.
+
+**3. Deploy the stalls contract to a test account first** (2 NEAR pays its storage and the 1-yocto deposits on payouts):
+
+```powershell
+near account create-account fund-myself stalls-test.hearthmarket.testnet '2 NEAR' autogenerate-new-keypair save-to-keychain sign-as hearthmarket.testnet network-config testnet sign-with-keychain send
+cd contracts\stalls
+cargo near build non-reproducible-wasm --no-abi
+near contract deploy stalls-test.hearthmarket.testnet use-file target\near\stalls.wasm with-init-call new json-args '{\"token\":\"hearthmarket.testnet\"}' prepaid-gas '30 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-keychain send
+near contract call-function as-read-only stalls-test.hearthmarket.testnet get_version json-args '{}' network-config testnet now   # "1"
+cd ..\..
+```
+
+**4. Refresh the keys and point the game at the test stalls.** The NPC keys need `npc_stall_buy` and the operator key needs the four relays, so this is a full run (not `--operator-only`):
+
+```powershell
+# put OWNER_PRIVATE_KEY back in .env for this one step, then:
+npm run setup:testnet -- --stalls stalls-test.hearthmarket.testnet --dry-run
+npm run setup:testnet -- --stalls stalls-test.hearthmarket.testnet
+# remove OWNER_PRIVATE_KEY from .env again
+```
+
+It writes new `NPC_KEY_*` and `ORACLE_KEY` values into `.env` (not printed). **Copy all seven to Railway** and redeploy, with `STALLS_ONCHAIN` still unset: the old keys stop working once replaced.
+
+**5. Smoke test on testnet** (signs only with the server's keys; no owner key needed):
+
+```powershell
+npm run stalls:smoke
+```
+
+It registers a throwaway test player, buys 3 ore, lists them, has a stranger try to cancel (must fail), lets Bruno buy (seller paid, Bruno gets the ore), has Bruno buy the same listing again (refunded), lists and cancels a second time (goods back), and withdraws with nothing owed (must fail). Every step prints an explorer link; it ends with `✓ All stall checks passed`.
+
+**6. Go live.** Either keep `stalls-test` (it is a full stalls contract) or repeat step 3 for `stalls.hearthmarket.testnet` and switch to it with the owner key once:
+
+```powershell
+npm run setup:testnet -- --stalls stalls.hearthmarket.testnet
+```
+
+Then set `STALLS_ONCHAIN=1` on Railway. The log says `stall board: escrowed on chain by the stalls contract`. Listings, NPC purchases and cancels then show up in **Prove on NEAR** as `relay_stall_list`, `npc_stall_buy`, `relay_stall_buy` and `relay_stall_cancel`.
+
+**Rollback:** unset `STALLS_ONCHAIN` first (new listings stay in the game at once; open ones still settle on chain or go home after 3 days while the server runs). To go back to version 5 entirely, wait until `get_open_count` on the stalls contract is 0, then deploy `backup\hearth-v5.wasm` as in step 2. A wallet-less player's escrowed goods can only be cancelled through version 6 (`relay_stall_cancel`), so do not roll back while listings are open. Anything owed after a failed payout stays withdrawable by anyone for its owner: `withdraw_for {"account_id": "<player>"}` on the stalls contract.

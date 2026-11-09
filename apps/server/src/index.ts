@@ -119,6 +119,7 @@ if (config.chain === 'near') {
     npcCallsPerHour: config.near.npcTxPerHour,
     batchProduce: config.near.batchProduce,
     minNpcNear: config.near.minNpcNear,
+    stalls: config.near.stallsOnChain,
     log,
   });
   log(`gas budget: ${config.near.npcTxPerHour || 'unlimited'} calls per NPC per hour, produce ${config.near.batchProduce ? 'batched per day' : 'per tick'}, day sync every ${config.near.daySeconds}s, ${config.near.idleSeconds ? `pause ${config.near.idleSeconds}s after the last player leaves` : 'never pauses'}`);
@@ -127,6 +128,16 @@ if (config.chain === 'near') {
   void near.view<string>(config.near.contract, 'get_version').then((ver) => {
     m.contractVersion = Number(ver) || 0;
     log(`contract ${config.near.contract} version ${ver}${m.contractVersion < 4 ? ' (NPC requests stay off chain until version 4 is deployed)' : m.contractVersion < 5 ? ' (claimed players stay in reconcile until version 5 is deployed)' : ''}`);
+    if (m.contractVersion >= 6) {
+      // listings escrowed by an earlier run: their goods go back to the sellers
+      void near.view<string | null>(config.near.contract, 'get_stalls').then(async (stalls) => {
+        if (!stalls) return;
+        const open = (await near.view<{ id: number; seller: string }[]>(stalls, 'get_open_listings', { limit: 50 })) ?? [];
+        const n = m.sweepStalls(open);
+        if (n) log(`stall board: sending ${n} listing(s) from an earlier run back to their sellers`);
+      }).catch((e) => log(`stall sweep skipped: ${(e as Error).message}`));
+    }
+    log(`stall board: ${m.stallsOn ? 'escrowed on chain by the stalls contract' : config.near.stallsOnChain ? 'STALLS_ONCHAIN=1 but the contract is older than version 6: listings stay in the game' : 'listings stay in the game (STALLS_ONCHAIN off)'}`);
   }).catch((e) => log(`get_version failed: ${(e as Error).message}`));
   const checkBalances = () => void m.checkBalances(config.near.lowBalanceNear).catch(() => {});
   setTimeout(checkBalances, 5_000);

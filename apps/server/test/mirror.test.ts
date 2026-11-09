@@ -340,3 +340,84 @@ describe('chain mirror: trust boundary (contract version 5)', () => {
     expect(accounts).not.toContain(`p-khang.${CONTRACT}`);
   });
 });
+
+describe('chain mirror: stall board (STALLS_ONCHAIN)', () => {
+  it('keeps listings in the game when the flag is off or the contract is older than version 6', () => {
+    const off = mirror().m;
+    off.contractVersion = 6;
+    expect(off.translate(playerSigner('khang'), 'list_item', { listing_id: 5, item: 'ore', qty: 2, price: 550 })).toBeNull();
+    const old = mirror({ stalls: true }).m;
+    old.contractVersion = 5;
+    expect(old.translate(playerSigner('khang'), 'list_item', { listing_id: 5, item: 'ore', qty: 2, price: 550 })).toBeNull();
+  });
+
+  it('relays list, NPC buy, player buy and cancel through the game contract, in order', async () => {
+    const { m, chain } = mirror({ stalls: true, maxPerMinute: 1000, maxQueue: 100 });
+    m.contractVersion = 6;
+    const khang = playerSigner('khang');
+    expect(m.hook(khang, 'list_item', { listing_id: 5, item: 'ore', qty: 2, price: 550 })).toBeTruthy();
+    // the NPC buy follows at once: it waits for the listing relay to land
+    expect(m.hook(NPC_DEFS.bruno.account, 'npc_stall_buy', { listing_id: 5, amount: 1100 })).toBeTruthy();
+    expect(m.hook(khang, 'list_item', { listing_id: 6, item: 'wheat', qty: 1, price: 200 })).toBeTruthy();
+    expect(m.hook(playerSigner('lan'), 'buy_listing', { listing_id: 6, amount: 200 })).toBeTruthy();
+    expect(m.hook(khang, 'list_item', { listing_id: 7, item: 'wheat', qty: 1, price: 200 })).toBeTruthy();
+    expect(m.hook(khang, 'cancel_listing', { listing_id: 7 })).toBeTruthy();
+    // never listed on chain: stays in the game
+    expect(m.hook(NPC_DEFS.bruno.account, 'npc_stall_buy', { listing_id: 99, amount: 100 })).toBeNull();
+    await m.idle();
+    const stall = chain.calls.filter((c) => c.method.includes('stall'));
+    // the operator's calls land in order; Bruno's buy lands after the listing it buys
+    expect(stall.filter((c) => c.signer === OPERATOR).map((c) => c.method)).toEqual([
+      'relay_stall_list', 'relay_stall_list', 'relay_stall_buy', 'relay_stall_list', 'relay_stall_cancel',
+    ]);
+    const list = stall[0];
+    expect(list.args).toMatchObject({ player: `p-khang.${CONTRACT}`, item: 'ore', qty: 2, price: '550' });
+    const npcBuy = stall.findIndex((c) => c.method === 'npc_stall_buy');
+    expect(npcBuy).toBeGreaterThan(0);
+    expect(stall[npcBuy]).toMatchObject({ signer: NPC_DEFS.bruno.account, args: { listing_id: list.args.listing_id, amount: '1100' } });
+    expect(stall.find((c) => c.method === 'relay_stall_buy')?.args).toMatchObject({ player: `p-lan.${CONTRACT}`, amount: '200' });
+    for (const c of stall) {
+      if (c.signer === OPERATOR) expect(OPERATOR_METHODS as readonly string[]).toContain(c.method);
+      else expect(NPC_KEY_METHODS.bruno as string[]).toContain(c.method);
+    }
+  });
+
+  it('a whole game with listings on chain signs only allowed calls', async () => {
+    const chain = new MockChain();
+    const m = new ChainMirror(chain, { contract: CONTRACT, operator: OPERATOR, playerAccount: (id) => `p-${id}.${CONTRACT}`, minDayMs: 0, maxPerMinute: 10_000, maxQueue: 100, stalls: true });
+    m.contractVersion = 6;
+    const game = new Game({ seed: 7, mirror: m }, new NpcBrain(null), new NpcSigner(chain, CONTRACT), chain);
+    game.join('khang', 'Khang');
+    game.village.s.players.khang.stock.ore = 6;
+    const ore = game.village.s.market.stock.ore;
+    const { midPrice } = await import('@hearth/economy');
+    expect(game.act('khang', { type: 'list_item', item: 'ore', qty: 3, price: Math.ceil(midPrice('ore', ore) * 0.6) }).ok).toBe(true);
+    for (let i = 0; i < 24 * 2; i++) game.tick();
+    await m.idle();
+    const methods = chain.calls.map((c) => c.method);
+    expect(methods).toContain('relay_stall_list');
+    expect(methods).toContain('npc_stall_buy');
+    for (const c of chain.calls) {
+      const npc = NPCS.find((id) => NPC_DEFS[id].account === c.signer);
+      if (npc) expect(NPC_KEY_METHODS[npc] as string[]).toContain(c.method);
+      else expect(OPERATOR_METHODS as readonly string[]).toContain(c.method);
+    }
+  });
+});
+
+describe('chain mirror: stall sweep after a restart', () => {
+  it('cancels listings an earlier run left in escrow, and follows landed listings with the flag off', async () => {
+    const { m, chain } = mirror({ stalls: true, maxPerMinute: 1000, maxQueue: 100 });
+    m.contractVersion = 6;
+    expect(m.hook(playerSigner('khang'), 'list_item', { listing_id: 3, item: 'ore', qty: 1, price: 500 })).toBeTruthy();
+    await m.idle();
+    const mine = Number(chain.calls.find((c) => c.method === 'relay_stall_list')!.args.listing_id);
+    expect(m.sweepStalls([{ id: 42, seller: 'old.testnet' }, { id: mine, seller: `p-khang.${CONTRACT}` }])).toBe(1);
+    await m.idle();
+    expect(chain.calls.filter((c) => c.method === 'relay_stall_cancel').map((c) => c.args)).toEqual([{ player: 'old.testnet', listing_id: 42 }]);
+    // flag switched off later: the listing already in escrow is still bought on chain
+    (m as unknown as { opts: { stalls: boolean } }).opts.stalls = false;
+    expect(m.hook(NPC_DEFS.bruno.account, 'npc_stall_buy', { listing_id: 3, amount: 500 })).toBeTruthy();
+    expect(m.translate(playerSigner('khang'), 'list_item', { listing_id: 4, item: 'ore', qty: 1, price: 500 })).toBeNull();
+  });
+});

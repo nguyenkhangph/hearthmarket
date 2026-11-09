@@ -57,6 +57,11 @@ export const config = {
     minNpcNear: num(env.CHAIN_MIN_NPC_NEAR, 0.15),
     /** log a warning when a signing account has less than this much spendable NEAR */
     lowBalanceNear: num(env.CHAIN_LOW_BALANCE_NEAR, 0.1),
+    /**
+     * stall board on chain: player listings escrowed by the stalls contract (needs contract v6
+     * and `set_stalls`). Off by default: listings stay in the game until the stalls contract is tested.
+     */
+    stallsOnChain: env.STALLS_ONCHAIN === '1',
     /** red-team attacks sent to the contract on chain (failed txs as proof), per hour, all players */
     redTeamProofsPerHour: num(env.CHAIN_REDTEAM_PROOFS_PER_HOUR, 12),
   },
