@@ -18,8 +18,10 @@ export const GOAL = {
 export interface GoalState {
   startDay: number;
   startWorth: Gold;
+  /** the AI rival's net worth when this week started */
+  rivalStart?: Gold;
   /** set when the week is over */
-  result?: { stars: number; worth: Gold; day: number };
+  result?: { stars: number; worth: Gold; day: number; rivalGain?: Gold };
   /** best result in earlier weeks */
   best?: number;
 }
@@ -37,12 +39,18 @@ export interface GoalView {
   targets: Gold[];
   over: boolean;
   best?: number;
+  /** this week's gain, yours and the AI rival's (when there is one) */
+  gain: Gold;
+  rival?: { name: string; gain: Gold; worth: Gold };
 }
 
 export function netWorth(v: Village, playerId: string): Gold {
   const p = v.s.players[playerId];
   if (!p) return 0;
-  return p.gold + ITEMS.reduce((s, i) => s + p.stock[i] * midPrice(i, v.s.market.stock[i]), 0);
+  // goods waiting in a stall-board listing are still the seller's
+  const listed = (v.s.listings ?? []).filter((l) => l.seller === playerId && l.status === 'open');
+  const held = (i: (typeof ITEMS)[number]) => p.stock[i] + listed.filter((l) => l.item === i).reduce((s, l) => s + l.qty, 0);
+  return p.gold + ITEMS.reduce((s, i) => s + held(i) * midPrice(i, v.s.market.stock[i]), 0);
 }
 
 /** the three thresholds of a week, rounded to whole gold */
@@ -68,5 +76,13 @@ export function goalView(v: Village, playerId: string): GoalView | undefined {
     targets,
     over: !!st.result,
     best: st.best,
+    gain: worth - st.startWorth,
+    ...(st.rivalStart !== undefined && v.s.players['ai-rival'] ? {
+      rival: {
+        name: v.s.players['ai-rival'].name,
+        gain: st.result?.rivalGain ?? netWorth(v, 'ai-rival') - st.rivalStart,
+        worth: netWorth(v, 'ai-rival'),
+      },
+    } : {}),
   };
 }

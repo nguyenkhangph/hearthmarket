@@ -140,11 +140,11 @@ function traders(v: Village, account?: (id: string) => string | null) {
   const s = v.s;
   const mid = Object.fromEntries(ITEMS.map((i) => [i, midPrice(i, s.market.stock[i])]));
   return Object.values(s.players)
-    .filter((p) => !p.bot)
+    .filter((p) => !p.bot || p.rival)
     .map((p) => {
       const goods = ITEMS.reduce((t, i) => t + p.stock[i] * mid[i], 0);
       return {
-        name: firstName(p.name), worth: p.gold + goods, gold: p.gold, goods, badges: p.badges?.length ?? 0,
+        name: p.rival ? `${p.name} (AI rival)` : firstName(p.name), worth: p.gold + goods, gold: p.gold, goods, badges: p.badges?.length ?? 0,
         guild: p.guild ? s.guilds[p.guild]?.name : undefined, account: account?.(p.id) ?? undefined,
       };
     })

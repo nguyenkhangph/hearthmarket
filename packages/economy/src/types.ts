@@ -99,6 +99,8 @@ export interface Player {
   lastActiveDay: number;
   /** soulbound badges (NEP-171 on chain when the server mirrors them) */
   badges?: { kind: string; title: string; season: number; day: number; tx?: string }[];
+  /** Silas, the AI rival trader (rival.ts) */
+  rival?: boolean;
   /** the free-play week goal (goal.ts); bots have none */
   goal?: import('./goal.ts').GoalState;
 }

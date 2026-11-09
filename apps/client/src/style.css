@@ -370,3 +370,6 @@ body[data-mode="online"] #challenge-btn { display: none; }
 .chip-btn.active { outline: 2px solid var(--gold); }
 .chip-btn.take b { color: var(--up); }
 .chip-btn.low b { color: #ff9b85; }
+#quests .goal-rival { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; }
+#quests .goal-rival.ahead span:last-child { color: var(--up); }
+#quests .goal-rival.behind span:last-child { color: #ff9b85; }

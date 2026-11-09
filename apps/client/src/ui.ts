@@ -373,6 +373,7 @@ export class Ui {
     return `<div class="goal ${gv.over ? 'over' : ''}" title="Net worth = your gold + your goods at the market price. ★ ${gv.targets.map((t) => fmt(t, 0)).join(' · ')} gold">
       <div class="goal-head"><span>🎯 ${esc(gv.title)}</span><span class="stars">${stars}</span></div>
       <div class="goal-bar"><b style="width:${(gv.progress * 100).toFixed(1)}%"></b>${ticks}</div>
+      ${gv.rival ? `<div class="goal-rival small ${gv.gain >= gv.rival.gain ? 'ahead' : 'behind'}" title="Silas is an AI trader playing your game against you: he buys dips, undercuts your stall listings by 2% and takes requests and big orders you leave open."><span>vs ${esc(gv.rival.name)} 🤖</span><span>you ${gv.gain >= 0 ? '+' : ''}${fmt(gv.gain)} · ${esc(gv.rival.name)} ${gv.rival.gain >= 0 ? '+' : ''}${fmt(gv.rival.gain)} ${gv.gain >= gv.rival.gain ? '▲' : '▼'}</span></div>` : ''}
       <div class="goal-foot small"><span>${fmt(gv.worth)} / ${fmt(gv.target, 0)} gold</span><span>${gv.over ? `<button class="linkish" data-goal>New week</button>` : `day ${gv.day}/${gv.days}${gv.next ? ` · next ★ at ${fmt(gv.next, 0)}` : ''}`}</span></div>
     </div>`;
   }
@@ -406,7 +407,7 @@ export class Ui {
         const left = r.due - this.v.day;
         const mine = r.takenBy === me.id;
         const taker = r.takenBy ? (mine ? 'you' : esc(this.v.s.players[r.takenBy]?.name ?? 'someone')) : '';
-        const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus. Accept to take it on: deliver in time and ${name} remembers it twice; miss it and ${name}'s prices for you go up 2%.`;
+        const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus. Accept to take it on: deliver in time and ${name} remembers it twice; miss it and ${name}'s prices for you go up 2%.${this.v.s.players['ai-rival'] ? ' Leave it untaken for a day and Silas, the AI rival, takes it.' : ''}`;
         const state = r.by ? `✓ ${esc(who)}` : r.missed ? `✗ missed${taker ? ` by ${taker}` : ''}` : `${fmt(r.price)} each +${fmt(r.bonus, 0)} · ${left ? `${left + 1} days left` : 'due tonight'}${taker ? ` · taken by ${taker}` : ''}`;
         const btn = r.by || r.missed ? ''
           : !r.takenBy ? `<button class="mini" data-accept="${r.id}" title="Promise ${name} the goods">Accept</button>`
@@ -414,7 +415,7 @@ export class Ui {
         return `<div class="req big ${r.by ? 'done' : ''} ${r.missed ? 'missed' : ''}" title="${esc(tip)}">${f ? `<img class="face" src="${f}" alt="">` : '<span></span>'}` +
           `<div class="rtext"><b>${esc(name)}</b> · <span class="bigtag">big order</span> ${r.qty} ${icon(r.item, 12)} ${esc(r.item)}<div class="muted small">${state}</div></div>${btn}</div>`;
       }
-      const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus; first delivery earns the badge "Friend of ${name}".`;
+      const tip = `${name}: ${r.text}. Pays ${fmt(r.price)} each + ${fmt(r.bonus, 0)} bonus; first delivery earns the badge "Friend of ${name}".${this.v.s.players['ai-rival'] ? ' Silas, the AI rival, fills open requests at 14:00: be first.' : ''}`;
       return `<div class="req ${r.by ? 'done' : ''}" title="${esc(tip)}">${f ? `<img class="face" src="${f}" alt="">` : '<span></span>'}` +
         `<div class="rtext"><b>${esc(name)}</b> · ${r.qty} ${icon(r.item, 12)} ${esc(r.item)}<div class="muted small">${r.by ? `✓ ${esc(who)}` : `${fmt(r.price)} each +${fmt(r.bonus, 0)} · ★`}</div></div>` +
         (r.by ? '' : `<button class="mini" data-req="${r.id}" ${have < r.qty ? 'disabled' : ''} title="${have < r.qty ? `You have ${have} ${r.item}: buy more in the Market` : 'Hand the goods over'}">${have}/${r.qty}<br>Deliver</button>`) +

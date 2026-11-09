@@ -26,6 +26,8 @@ export interface GameOptions {
   worldPost?: () => WorldPostInput | undefined;
   /** called once per game day, before the chain sync (the LLM brain plans here) */
   onNewDay?: (v: Village) => void;
+  /** Silas, the AI rival trader (default on) */
+  rival?: boolean;
 }
 
 /**
@@ -43,7 +45,7 @@ export class Game {
     readonly chain: ChainAdapter,
   ) {
     const world = opts.world ?? (opts.replayDays ? new ReplayWorld(opts.replayDays) : undefined);
-    this.village = createVillage({ seed: opts.seed, world });
+    this.village = createVillage({ seed: opts.seed, world, rival: opts.rival ?? true });
     this.mirror = opts.mirror;
     if (this.mirror) {
       this.village.chainHook = this.mirror.hook;

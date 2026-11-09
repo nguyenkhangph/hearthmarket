@@ -237,6 +237,7 @@ The same engine runs in the browser for guest mode, so the demo works with one c
 | Big orders: every other day an NPC posts a larger order (35% over the market, 8-gold bonus, 3 days). A player accepts it first; delivering in time counts twice in the NPC's memory, missing it raises that NPC's prices for the player by 2% | working; deliveries settle on chain like other requests (`relay_deliver_request`) |
 | Hire a stall keeper: an NPC sells your goods on the stall board for 3 days by the strategy you pick (sell fast / hold the price / wait for a rise when the world says prices go up), takes 5% of each sale, and reports at 20:00 what it sold and why | working (engine); its listings are relayed like the player's own; the commission stays in the game and reaches the chain through `reconcile` |
 | Trade feedback: "+N gold" floating from the purse, coins flying to it, a short synthesised chime (🔊 toggle; respects reduced motion) | working |
+| Silas, an AI rival trader playing your game against you with the same rules: buys dips, lists 2% under the cheapest player listing (NPCs take the cheapest first), fills open requests at 14:00 and big orders left untaken for a day, sells into rallies. Your week goal shows your gain against his; the dashboard leaderboard lists him | working (engine, deterministic, kept off chain) |
 | Market wars and guild funds on chain | not built (guild trades stay in the game and reach the chain only through `reconcile`) |
 
 ## Built during NEAR HACKATHON

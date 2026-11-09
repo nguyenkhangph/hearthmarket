@@ -1,6 +1,7 @@
 import { noteDelivery, notePromise, noteTrade } from './regard.ts';
 import type { KeeperJob, KeeperStrategy, Listing } from './types.ts';
 import { GOAL, goalTargets, netWorth, starsFor } from './goal.ts';
+import { RIVAL, rivalStep, rivalWorth } from './rival.ts';
 import {
   ITEM_DEFS, ITEMS, NPC_DEFS, NPCS, NEAR_CONFIG, RECIPES, RECIPE_YIELD, RULES, AI_GUILDS, QUESTS,
   type ItemId, type NpcId, type QuestId,
@@ -34,6 +35,8 @@ export interface VillageOptions {
   aiGuilds?: boolean;
   /** extra bot players (simulation report uses 50) */
   botPlayers?: number;
+  /** Silas, an AI rival trader who plays the player's game against them (rival.ts) */
+  rival?: boolean;
 }
 
 /**
@@ -77,6 +80,7 @@ export class Village {
       this.startDay(); // day 1 world
       if (opts.aiGuilds !== false) this.seedAiGuilds();
       for (let i = 0; i < (opts.botPlayers ?? 0); i++) this.addBotPlayer(i);
+      if (opts.rival) this.addRival();
     }
   }
 
@@ -207,6 +211,7 @@ export class Village {
       case 20: this.aiTick?.(this); this.tallyVotes(); this.keepersReport(); break;
       case 23: this.closeDay(); break;
     }
+    rivalStep(this, h);
     this.wander();
   }
 
@@ -353,9 +358,11 @@ export class Village {
       if (!st || st.result || day - st.startDay < GOAL.days) continue;
       const worth = netWorth(this, p.id);
       const stars = starsFor(st, worth);
-      st.result = { stars, worth, day };
+      const rivalGain = st.rivalStart !== undefined && this.s.players[RIVAL.id] ? rivalWorth(this) - st.rivalStart : undefined;
+      st.result = { stars, worth, day, ...(rivalGain !== undefined ? { rivalGain } : {}) };
       st.best = Math.max(st.best ?? 0, stars);
-      this.feed('quest', `${p.name} finished the week with ${fmt(worth)} gold: ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`);
+      const vs = rivalGain === undefined ? '' : worth - st.startWorth >= rivalGain ? `, ahead of ${RIVAL.name} (${rivalGain >= 0 ? '+' : ''}${fmt(rivalGain)})` : `, behind ${RIVAL.name} (${rivalGain >= 0 ? '+' : ''}${fmt(rivalGain)})`;
+      this.feed('quest', `${p.name} finished the week with ${fmt(worth)} gold: ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}${vs}`);
     }
   }
 
@@ -1381,10 +1388,17 @@ export class Village {
       quests: Object.fromEntries(QUESTS.map((q) => [q.id, false])) as Record<QuestId, boolean>,
       bot, daysActive: 0, lastActiveDay: this.day,
     };
-    if (!bot) p.goal = { startDay: this.day, startWorth: p.gold };
+    if (!bot) p.goal = { startDay: this.day, startWorth: p.gold, ...(this.s.players[RIVAL.id] ? { rivalStart: rivalWorth(this) } : {}) };
     this.s.players[id] = p;
     this.s.ledger.faucets.signup += p.gold;
     return p;
+  }
+
+  /** The rival plays as a player (same rules, same actions), without quests or a goal of its own. */
+  private addRival() {
+    const p = this.addPlayer(RIVAL.id, RIVAL.name, true);
+    p.rival = true;
+    for (const q of QUESTS) p.quests[q.id] = true;
   }
 
   private addBotPlayer(i: number) {
@@ -1636,7 +1650,7 @@ export class Village {
       }
       case 'start_goal': {
         const best = Math.max(p.goal?.best ?? 0, p.goal?.result?.stars ?? 0);
-        p.goal = { startDay: this.day, startWorth: netWorth(this, p.id), ...(best ? { best } : {}) };
+        p.goal = { startDay: this.day, startWorth: netWorth(this, p.id), ...(best ? { best } : {}), ...(this.s.players[RIVAL.id] ? { rivalStart: rivalWorth(this) } : {}) };
         return { ok: true, info: `New week: grow your purse to ${fmt(goalTargets(p.goal)[2], 0)} gold by day ${this.day + GOAL.days - 1}` };
       }
       case 'cancel_order': {
@@ -1752,7 +1766,7 @@ export class Village {
         return { ok: true };
       }
       case 'accept_request': {
-        if (p.bot) return { ok: false, reason: 'only players take big orders' };
+        if (p.bot && !p.rival) return { ok: false, reason: 'only players take big orders' };
         const r = (this.s.requests ?? []).find((x) => x.id === a.requestId);
         if (!r || r.due === undefined || r.by || r.missed || this.day > r.due) return { ok: false, reason: 'that order is not open' };
         if (r.takenBy) return { ok: false, reason: r.takenBy === p.id ? 'you already took it' : `${this.s.players[r.takenBy]?.name ?? 'someone'} took it first` };
@@ -1762,7 +1776,7 @@ export class Village {
         return { ok: true, info: `${NPC_DEFS[r.npc].name} counts on you: ${r.qty} ${r.item} ${left ? `in ${left + 1} days` : 'by tonight'}. Late = they remember.` };
       }
       case 'deliver_request': {
-        if (actor.kind !== 'player' || p.bot) return { ok: false, reason: 'only players deliver requests' };
+        if (actor.kind !== 'player' || (p.bot && !p.rival)) return { ok: false, reason: 'only players deliver requests' };
         const r = (this.s.requests ?? []).find((x) => x.id === a.requestId);
         if (!r || r.missed || (r.due !== undefined ? this.day > r.due : r.day !== this.day)) return { ok: false, reason: 'that request has expired' };
         if (r.by) return { ok: false, reason: `${this.s.players[r.by]?.name ?? 'someone'} already delivered it` };

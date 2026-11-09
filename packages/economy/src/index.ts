@@ -26,3 +26,4 @@ export * from './challenge.ts';
 export * from './regard.ts';
 export * from './health.ts';
 export * from './goal.ts';
+export * from './rival.ts';

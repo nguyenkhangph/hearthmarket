@@ -432,7 +432,9 @@ export class ChainMirror {
       }
     }
     if (!signer.endsWith(PLAYER_SIGNER_SUFFIX) || !operator || args.guild) return null;
-    const player = this.opts.playerAccount(signer.slice(0, -PLAYER_SIGNER_SUFFIX.length));
+    const pid = signer.slice(0, -PLAYER_SIGNER_SUFFIX.length);
+    if (pid.startsWith('ai-')) return null; // the AI rival and AI guild members play in the game only
+    const player = this.opts.playerAccount(pid);
     if (!player) return null;
     const qty = Number(args.qty);
     let relay: Call | null = null;
