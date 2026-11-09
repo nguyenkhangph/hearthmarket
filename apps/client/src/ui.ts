@@ -25,6 +25,10 @@ const PROOF_LABEL: Record<string, string> = {
   relay_deliver_request: 'A request delivered to an NPC',
   mint_badge: 'A soulbound badge minted (NEP-171)',
   hire: 'An NPC hiring another NPC',
+  relay_stall_list: "A player's goods listed into the stalls contract's escrow",
+  relay_stall_buy: 'A player bought a stall-board listing',
+  relay_stall_cancel: 'A stall-board listing cancelled, goods back',
+  npc_stall_buy: "An NPC bought a player's listing, with its own key",
 };
 
 const LS = {
@@ -589,8 +593,12 @@ ${this.stallBoard()}`;
     if (!me) return [];
     const signer = playerSigner(me.id);
     const mine = new Set(this.v.s.orders.filter((o) => o.by.kind === 'player' && o.by.id === me.id).map((o) => o.id));
+    // purchases of my stall-board listings (an NPC's npc_stall_buy, or another player's buy)
+    const listed = new Set((this.v.s.listings ?? []).filter((l) => l.seller === me.id).map((l) => l.id));
     return this.v.s.txs
-      .filter((t) => t.signer === signer || (t.method === 'fill_order' && mine.has(Number(t.args.order_id))))
+      .filter((t) => t.signer === signer
+        || (t.method === 'fill_order' && mine.has(Number(t.args.order_id)))
+        || ((t.method === 'npc_stall_buy' || t.method === 'buy_listing') && listed.has(Number(t.args.listing_id))))
       .slice(-n)
       .reverse();
   }
@@ -598,6 +606,11 @@ ${this.stallBoard()}`;
   private txWhat(t: { signer: string; method: string; args: Record<string, unknown> }) {
     const a = t.args;
     const by = this.me && t.signer === playerSigner(this.me.id) ? '' : ` by ${esc(t.signer.split('.')[0])}`;
+    if (t.method === 'npc_stall_buy' || (t.method === 'buy_listing' && by)) {
+      const l = (this.v.s.listings ?? []).find((x) => x.id === Number(a.listing_id));
+      const mine = l && this.me && l.seller === this.me.id;
+      return `${esc(t.signer.split('.')[0].replace(/^./, (c) => c.toUpperCase()))} bought ${mine ? 'your' : 'a'} listing${l ? ` · ${l.qty} ${esc(l.item)}` : ''}`;
+    }
     return `${esc(t.method.replace(/^relay_/, '').replace(/_/g, ' '))}${a.qty ? ` ${a.qty}` : ''}${a.item ? ` ${esc(String(a.item))}` : ''}${by}`;
   }
 
@@ -646,8 +659,8 @@ ${this.stallBoard()}`;
 <div class="grid-2">
   <section class="pcard">
     <h3>⛓ Prove on NEAR</h3>
-    <p class="small">Your market trades, orders, request deliveries and badges are relayed to NEAR testnet; each row shows its state, and only real transactions get an explorer link.</p>
-    <p class="muted small">What stays in the game: stall and guild trades, quest rewards, eating and upkeep. Once a game day the operator's <span class="mono">reconcile</span> writes the game's balances to the chain and logs how much it changed. Claim your key (Account) and reconcile never touches your account again.</p>
+    <p class="small">Your market trades, orders, request deliveries, stall-board listings and badges are relayed to NEAR testnet; each row shows its state, and only real transactions get an explorer link. A listing's goods wait in the stalls contract's escrow; the NPC that buys it signs with its own key.</p>
+    <p class="muted small">What stays in the game: guild-stall and guild trades, a hired keeper's commission, quest rewards, eating and upkeep. Once a game day the operator's <span class="mono">reconcile</span> writes the game's balances to the chain and logs how much it changed. Claim your key (Account) and reconcile never touches your account again.</p>
     <div class="kvrow small"><span>Your account</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(acct)}">${esc(acct.slice(0, 10))}…${esc(acct.slice(-6))} ↗</a></div>
     <div class="kvrow small"><span>Game contract</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(NEAR_CONFIG.contract)}">${esc(NEAR_CONFIG.contract)} ↗</a></div>
     ${yours}
