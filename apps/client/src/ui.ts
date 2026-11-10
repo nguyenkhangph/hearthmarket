@@ -1171,7 +1171,15 @@ Guard: ${esc(d.guard)}</pre>`).join('') || '<div class="muted small">No decision
     } else if (t.name === 'lItem') {
       this.listForm = { item: t.value as ItemId, qty: 1, price: 0 };
       this.renderPanel(true);
-    } else if (t.name === 'lQty') this.listForm.qty = Math.max(1, Math.min(RULES.listingMaxQty, Number(t.value) || 1));
+    } else if (t.name === 'lQty') {
+      this.listForm.qty = Math.max(1, Math.min(RULES.listingMaxQty, Number(t.value) || 1));
+      // keep the button labels in step without re-rendering the form under the cursor
+      const lf = this.listForm;
+      const list = $('[data-act="list"]', $('#panel'));
+      if (list) list.textContent = `List ${lf.qty} ${lf.item}`;
+      const hire = $('[data-act="hire-keeper"]', $('#panel'));
+      if (hire) hire.textContent = `Hire ${NPC_DEFS[this.keeperForm.npc].name}: sell ${lf.qty} ${lf.item}`;
+    }
     else if (t.name === 'lPrice') this.listForm.price = g(Number(t.value) || 0);
     else if (t.name === 'qty') f.qty = Math.max(1, Math.min(50, Number(t.value) || 1));
     else if (t.name === 'maxPrice') f.maxPrice = g(Number(t.value) || 0);

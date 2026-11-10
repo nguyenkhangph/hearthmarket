@@ -17,12 +17,12 @@ Hearthmarket is a village where six AI agents run real businesses on NEAR, and y
 - [ ] Sound on (🔊): the coin chime is part of the feel. Record at 1920×1080, browser zoom 100%.
 - [ ] Never show the private key (Account → Claim) or the Google email on screen.
 
-## Video (made, v7)
+## Video (final)
 
 Two cuts, rendered from the live client in guest mode with narration (Kokoro TTS), subtitles, original music and zooms; every on-chain claim in them is a real testnet transaction:
 
-- **Full, 3:06** (`hearthmarket-demo-v7.mp4`): hook · Google sign-in · the village · real weather and the gold price · agents negotiate · haggle over three rounds · sell from your stall (escrow, Bruno buys with his own key) · hire a keeper and race Silas · council and co-op caravan · red team · the refused transaction on Nearblocks · every claim on chain · outro.
-- **Short, 2:18** (`hearthmarket-demo-v7-short.mp4`): for an X account without Premium (videos up to 2:20). Drops sign-in, weather, agent-to-agent deals and the claims card.
+- **Full, 3:12** (`hearthmarket-demo-final.mp4`): cold open (Theo and Chloe haggle, zoom out to the title) · Google sign-in · the village · real weather and the gold price · agents negotiate · haggle over three rounds · sell from your stall (escrow, Bruno buys with his own key) · hire a keeper and race Silas · council and co-op caravan · red team · the refused transaction on Nearblocks · every claim on chain · outro.
+- **Short, 2:05** (`hearthmarket-demo-final-short.mp4`): for an X account without Premium (videos up to 2:20). Drops sign-in, weather, agent-to-agent deals and the claims card.
 
 The NEAR rules set no length limit; post the full cut if the X account allows it. After posting, put the post's link in the README (top, next to *Play*).
 

@@ -94,9 +94,9 @@ Each NPC account page lists that NPC's own transactions (`produce`, `craft`, `hi
 ### Verify the claims
 
 ```sh
-npm test              # 144 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
+npm test              # 174 tests: economy invariants, 20/20 prompt-injection attacks blocked, chain mirror, plan guard, Google token checks
 npm run sim           # 30 simulated days, 4 AI guilds, 50 bots -> docs/economy-sim.md
-npm run contract:test # 54 Rust unit tests for the hearth contract (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
+npm run contract:test # 65 Rust unit tests for the hearth contract (plus `npm run stalls:test`: 16 for the stalls contract) (NEP-141/171/245, guard, relays, requests, migrate); needs rustc 1.95+ (pinned in `contracts/hearth/rust-toolchain.toml`)
 ```
 
 - **Gold is conserved to the centigold**: supply = genesis + faucets − sinks, checked every simulated day (`packages/economy/test/economy.test.ts`).
@@ -117,7 +117,7 @@ Exactly where a language model is involved, so nobody has to guess.
 | 4 AI guilds and 50 bot players | Scripted strategies (trader, orderer, investor, stallkeeper) | none | Same actions and checks as human players |
 | Red team "obedient model" | A test double that turns each attack into the action the attacker wants, to test the worst case | none (deliberately) | 20 attacks, all blocked by the signer or the contract |
 
-When does the model run? Only while someone is playing online or watching the dashboard (60 s window). Each buyer/seller pair negotiates with the model at most every `NPC_DEAL_MINUTES` (default 4 real minutes); the other mornings that pair deals by rules, and the deal says so. With nobody there, or if the model fails or times out, the NPCs fall back to the rules, and the feed says which brain decided (`thinks (NEAR AI Cloud)` or `thinks (rules)`). The dashboard's **Who decided** card counts deals by the model, by rules and by rules after a model failure since the server started, and lists the latest decisions with their source; in the game, each NPC's **Decision inspector** shows source, input, output, guard and receipt for its plans and deals. Guest mode runs entirely in the browser and uses the rules only. The model never holds a key and never moves gold itself: it proposes, the guard, the signer's key rules and the contract decide.
+When does the model run? While someone is playing online or watching the dashboard (60 s window), and, with nobody there, for one model day every `NPC_IDLE_MODEL_MINUTES` (default 15) so the hosted village keeps real model decisions. Each buyer/seller pair negotiates with the model at most every `NPC_DEAL_MINUTES` (default 4 real minutes); the other mornings that pair deals by rules, and the deal says so. Between those idle model days, or if the model fails or times out, the NPCs fall back to the rules, and the feed says which brain decided (`thinks (NEAR AI Cloud)` or `thinks (rules)`). The dashboard's **Who decided** card counts deals by the model, by rules and by rules after a model failure since the server started, and lists the latest decisions with their source; in the game, each NPC's **Decision inspector** shows source, input, output, guard and receipt for its plans and deals. Guest mode runs entirely in the browser and uses the rules only. The model never holds a key and never moves gold itself: it proposes, the guard, the signer's key rules and the contract decide.
 
 ### How far NEAR Intents goes
 

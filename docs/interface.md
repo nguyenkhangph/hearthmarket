@@ -1,4 +1,4 @@
-# Contract interface (version 3)
+# Contract interface (version 6)
 
 The build tracks depend on each other only through this interface. Change it only by agreement, and update the engine (`packages/economy`), the server mirror (`apps/server/src/chain/mirror.ts`) and the contract in the same PR.
 
@@ -17,10 +17,10 @@ Keys:
 
 | Key | On account | Methods |
 | --- | --- | --- |
-| Mike, Jack, Buba | their NPC account | `produce, market_buy, market_sell, hire, fill_order, place_order` |
-| Chloe, Theo | their NPC account | `craft, market_buy, market_sell, hire, fill_order, place_order` |
-| Bruno | his NPC account | `world_trade, market_buy, market_sell, hire, fill_order, place_order` |
-| Operator (game server) | the contract account | `reconcile, post_world_data, advance_day, mint_badge, relay_register_player, relay_market_buy, relay_market_sell, relay_place_order, relay_cancel_order` |
+| Mike, Jack, Buba | their NPC account | `produce, market_buy, market_sell, hire, fill_order, place_order, npc_stall_buy` |
+| Chloe, Theo | their NPC account | `craft, market_buy, market_sell, hire, fill_order, place_order, npc_stall_buy` |
+| Bruno | his NPC account | `world_trade, market_buy, market_sell, hire, fill_order, place_order, npc_stall_buy` |
+| Operator (`ops.<contract>`, since version 5) | its own account | `reconcile, post_world_data, advance_day, mint_badge, relay_register_player, relay_market_buy, relay_market_sell, relay_place_order, relay_cancel_order, relay_deliver_request, relay_self_custody, relay_stall_list, relay_stall_buy, relay_stall_cancel, relay_stall_withdraw` |
 
 The lists live in `NPC_KEY_METHODS` and `OPERATOR_METHODS` (`packages/economy/src/policy.ts`); `npm run setup:testnet` creates exactly these keys. The owner's full-access key is only used by the setup script.
 
@@ -53,9 +53,17 @@ Operator:
 | `relay_register_player(player, start_gold) -> bool` | once per player |
 | `relay_market_buy / relay_market_sell(player, …)` · `relay_place_order(player, order_id, item, qty, max_price, deadline_days)` · `relay_cancel_order(player, order_id)` | trades for wallet-less players; refuses NPC accounts |
 | `mint_badge(owner_id, kind, title, description) -> token_id` | soulbound quest/season badge |
+| `relay_deliver_request(player, npc, item, qty, price, bonus)` | a player hands goods to an NPC that asked for them (also co-op caravan shares, `npc` = Bruno); price ≤ 1.5× the market, bonus ≤ 10 gold, inside the NPC's budget |
+| `relay_self_custody(player)` | the player claimed their key: `reconcile` never touches that account again |
+| `relay_stall_list(player, listing_id, item, qty, price)` | moves the goods into the stalls contract by `mt_transfer_call` |
+| `relay_stall_buy(player, listing_id, amount)` · `relay_stall_cancel(player, listing_id)` · `relay_stall_withdraw(account_id)` | buy a whole listing by `ft_transfer_call`; cancel (seller only, enforced by the stalls contract); push an owed payout |
 | `advance_day()` | owner or operator |
 
-Owner: `register_npc(account, daily_budget, produces, merchant, start_gold)`, `set_crafts(account, items)`, `register_player(account, start_gold)`, `close_season(ranking)`. Upgrade: `migrate()` (private, init with `ignore_state`) from the version 1 layout.
+NPC (version 6): `npc_stall_buy(listing_id, amount)`: an NPC buys a whole stall listing with its own key, inside its daily budget; the gold goes by `ft_transfer_call` to the stalls contract, which pays the seller and hands over the goods in the same transaction.
+
+Stalls contract (`contracts/stalls`, live at `stalls-test.<contract>`, set with `set_stalls`): `mt_on_transfer` (list), `ft_on_transfer` (buy; refunds excess, short, sold, own-listing and unknown purchases), `cancel_listing` / `cancel_for`, `withdraw` / `withdraw_for` (pays only the owner), views `get_listing`, `get_open_listings`, `owed_to`.
+
+Owner: `set_oracle(account)` (version 5), `set_stalls(account)` (version 6), `register_npc(account, daily_budget, produces, merchant, start_gold)`, `set_crafts(account, items)`, `register_player(account, start_gold)`, `close_season(ranking)`. Upgrade: `migrate()` (private, init with `ignore_state`) from the version 1 layout.
 
 ## Standards
 
@@ -69,16 +77,19 @@ Views: `get_version`, `item_balance`, `items_of`, `get_npc`, `get_crafts`, `is_p
 
 On chain: NPC production, crafting, NPC-to-NPC deals, NPC market trades, order escrow and fills for orders players placed, Bruno's world trades, world data, player registrations and their market trades and orders, badges. Each NPC call is signed by that NPC's own key.
 
-Engine only: eating, upkeep, tool wear, guild funds, votes, investments, stalls and the 4 AI guilds' bots. `reconcile` brings the chain's balances back to the engine's books once a game day, and logs the difference.
+On chain since version 6: stall-board listings (escrow in the stalls contract), NPC purchases of them, cancels.
 
-## NEP-245 goods (version 3)
+Engine only: eating, upkeep, tool wear, guild funds and votes, investments, guild stalls, the village council's votes and effects, the AI rival Silas, hired stall keepers' commission, co-op bonuses and the 4 AI guilds' bots. `reconcile` brings the chain's balances back to the engine's books once a game day, and logs the difference.
+
+## NEP-245 goods (since version 3)
 
 | Method | Who | Notes |
 | --- | --- | --- |
 | `mt_balance_of(account_id, token_id)`, `mt_batch_balance_of` | view | token ids are item names: `ore`, `timber`, `wheat`, `bread`, `tools`, `sword` |
 | `mt_supply`, `mt_batch_supply` | view | `null`: supply is not tracked on chain (`reconcile` re-anchors balances) |
 | `mt_token(token_ids)`, `mt_metadata_contract()` | view | spec `mt-1.0.0`, symbol `HGOODS` |
-| `mt_transfer(receiver_id, token_id, amount, approval, memo)`, `mt_batch_transfer` | players, 1 yoctoNEAR | NPC accounts panic ("NPC accounts cannot transfer goods"); approvals and `mt_transfer_call` are not implemented |
+| `mt_transfer(receiver_id, token_id, amount, approval, memo)`, `mt_batch_transfer` | players, 1 yoctoNEAR | NPC accounts panic ("NPC accounts cannot transfer goods"); approvals are not implemented |
+| `mt_transfer_call(receiver_id, token_id, amount, approval, memo, msg)` | players (version 6) | goods to a receiver contract (the stalls contract); `mt_resolve_transfer` refunds what it does not use |
 
 Events (NEP-297, standard `nep245`): `mt_mint` and `mt_burn` when goods appear or are used up (production, crafting, market trades, hires), `mt_transfer` for player transfers. `reconcile` writes balances without events.
 

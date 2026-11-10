@@ -1,6 +1,6 @@
 # Testnet setup (Windows, PowerShell)
 
-Goal: the `hearth` contract (version 2) on NEAR testnet, six NPC sub-accounts with their own function-call keys, an operator key for the game server, and the game sending real transactions. Optional: Google sign-in, NPC brains on NEAR AI Cloud, live weather from Open-Meteo.
+Goal: the `hearth` contract (version 6, upgraded step by step below) on NEAR testnet, a separate stalls contract, six NPC sub-accounts with their own function-call keys, an operator key for the game server, and the game sending real transactions. Optional: Google sign-in, NPC brains on NEAR AI Cloud, live weather from Open-Meteo.
 
 Never commit `.env`. It holds keys.
 
@@ -96,7 +96,7 @@ chain ok   hearthmarket.testnet post_world_data tx=...
 chain ok   hearthmarket.testnet relay_market_buy tx=...      (after you buy something)
 ```
 
-In the feed, real hashes are links to testnet.nearblocks.io; `off-chain` marks actions that stay in the engine (stalls, guild funds, AI guild bots), `failed` shows what the contract refused (the reason is in the server log). Your account chip (top right) links to your player account on the explorer.
+In the feed, real hashes are links to testnet.nearblocks.io; `off-chain` marks actions that stay in the engine (guild stalls, guild funds, council votes, the AI rival, AI guild bots; stall-board listings go on chain once version 6 and `STALLS_ONCHAIN=1` are in place), `failed` shows what the contract refused (the reason is in the server log). Your account chip (top right) links to your player account on the explorer.
 
 On chain today: NPC production, crafting, NPC deals, NPC market trades, Bruno's world trades, your market trades and orders (relayed, you have no wallet), order fills, world data, badges. Once a game day the operator `reconcile`s the chain to the engine's books (see `docs/interface.md`).
 
