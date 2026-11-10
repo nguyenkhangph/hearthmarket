@@ -83,7 +83,7 @@ export class LocalSource implements GameSource {
       this.v = this.challenge.v;
       this.playerId = PLAYER_ID;
     } else {
-      this.v = createVillage({ seed, world: new ReplayWorld(days), rival: true });
+      this.v = createVillage({ seed, world: new ReplayWorld(days), rival: true, social: true });
       // warm up two days so charts and the feed have history; the replay story starts on day 3
       this.v.runDays(2);
       this.playerId = playerName.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'guest';

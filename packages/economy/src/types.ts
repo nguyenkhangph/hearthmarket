@@ -208,6 +208,36 @@ export interface Listing {
 
 export type KeeperStrategy = 'hold' | 'quick' | 'wait';
 
+export type MotionKind = 'no_wheat_export' | 'bonus_up' | 'no_ore_import';
+
+/** A village council motion (council.ts): NPCs vote by interest, players and the rival too. */
+export interface CouncilMotion {
+  id: number;
+  kind: MotionKind;
+  day: number;
+  title: string;
+  votes: { who: string; kind: 'npc' | 'player'; name: string; vote: 'yes' | 'no' | 'abstain'; why: string }[];
+  status: 'open' | 'passed' | 'failed';
+  /** in force from..to (days, inclusive) once passed */
+  from?: number;
+  to?: number;
+}
+
+/** A co-op order: Bruno's caravan buys a large lot from everyone who chips in. */
+export interface CoopOrder {
+  id: number;
+  item: ItemId;
+  qty: number;
+  /** paid per unit on delivery */
+  price: Gold;
+  /** split by share when the order is filled */
+  bonus: Gold;
+  day: number;
+  due: number;
+  status: 'open' | 'filled' | 'expired';
+  parts: { kind: 'npc' | 'player'; id: string; name: string; qty: number; paid: Gold; bonus?: Gold; tx?: string }[];
+}
+
 /** A player hired an NPC to sell goods for them on the stall board (commission on sales). */
 export interface KeeperJob {
   id: number;
@@ -236,6 +266,10 @@ export interface VillageState {
   listings?: Listing[];
   /** haggles in progress today, "npc:player" -> round (haggle.ts) */
   haggles?: Record<string, { day: number; round: number }>;
+  /** village council motions, newest last */
+  council?: CouncilMotion[];
+  /** co-op orders (Bruno's caravans) */
+  coops?: CoopOrder[];
   /** NPCs hired to keep a player's stall */
   keepers?: KeeperJob[];
   /** what each NPC remembers about each player (regard.ts) */
@@ -318,6 +352,8 @@ export type Action =
   | { type: 'buy_listing'; id: number }
   | { type: 'cancel_listing'; id: number }
   | { type: 'start_goal' }
+  | { type: 'council_vote'; id: number; yes: boolean }
+  | { type: 'coop_give'; id: number; qty: number }
   | { type: 'accept_request'; requestId: number }
   | { type: 'hire_keeper'; npc: NpcId; item: ItemId; qty: number; strategy: KeeperStrategy }
   | { type: 'dismiss_keeper'; id: number }

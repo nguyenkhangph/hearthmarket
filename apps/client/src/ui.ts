@@ -4,7 +4,7 @@ import {
 } from '@hearth/economy';
 import { icon } from './assets.ts';
 import { chime, coinBurst, floatText, isMuted, lastPointer, setMuted } from './juice.ts';
-import { goalView, haggleRound, HAGGLE_ROUNDS, economyHealth, negotiateContractRules, regardBps, replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
+import { goalView, tally as councilTally, MOTIONS, haggleRound, HAGGLE_ROUNDS, economyHealth, negotiateContractRules, regardBps, replayChallenge, CHALLENGES, type Challenge, type ChallengeResult, type WorldDay } from '@hearth/economy';
 import replayWeek from '../../../data/world/replay-kansas-heatwave.json';
 import type { GameSource } from './source.ts';
 
@@ -116,6 +116,14 @@ export class Ui {
         $('.keeper', $('#panel'))?.scrollIntoView({ block: 'center' });
         return;
       }
+      const cv = (e.target as HTMLElement).closest<HTMLElement>('[data-cvote]');
+      if (cv) {
+        const m = this.v.s.council?.at(-1);
+        if (m) void this.act({ type: 'council_vote', id: m.id, yes: cv.dataset.cvote === 'yes' });
+        return;
+      }
+      const co = (e.target as HTMLElement).closest<HTMLElement>('[data-coop]');
+      if (co) { void this.act({ type: 'coop_give', id: Number(co.dataset.coop), qty: Number(co.dataset.qty) }); return; }
       if ((e.target as HTMLElement).closest('[data-goal]')) {
         void this.act({ type: 'start_goal' });
         return;
@@ -356,6 +364,45 @@ export class Ui {
   private questsOpen = (() => { try { return localStorage.getItem('hm.quests') !== 'closed'; } catch { return true; } })();
 
   /** Bottom-left card, kept small so it does not cover the village: next starter step, today's requests, badges. */
+  /** The village council (vote today) and Bruno's co-op caravan (chip in), when there is one. */
+  private socialHtml(): string {
+    const me = this.me;
+    const v = this.v;
+    if (!me || this.ch || !v.s.council) return '';
+    let html = '';
+    const m = v.s.council.at(-1);
+    if (m && (m.status === 'open' || (m.status === 'passed' && v.day <= m.to!))) {
+      const t = councilTally(m);
+      const mine = m.votes.find((x) => x.kind === 'player' && x.who === me.id);
+      const mark = (x: (typeof m.votes)[number]) => (x.vote === 'yes' ? '✓' : x.vote === 'no' ? '✗' : '–');
+      const faces = m.votes.filter((x) => x.kind === 'npc' || x.who === 'ai-rival').map((x) => {
+        const f = x.kind === 'npc' ? this.face(x.who as NpcId) : '';
+        return `<span class="cv ${x.vote}" title="${esc(`${x.name}: ${x.vote}${x.why ? `, ${x.why}` : ''}`)}">${f ? `<img class="face" src="${f}" alt="">` : '🤖'}${mark(x)}</span>`;
+      }).join('');
+      const players = m.votes.filter((x) => x.kind === 'player' && x.who !== 'ai-rival').length;
+      html += m.status === 'open'
+        ? `<div class="soc council"><div class="soc-head"><span>🏛 Council · counted at 20:00</span><span class="${t.passes ? 'up' : 'down'}">${t.yes} yes · ${t.no} no</span></div>
+          <div class="small">${esc(m.title)}</div>
+          <div class="cvotes">${faces}${players ? `<span class="muted small">+${players} player${players === 1 ? '' : 's'}</span>` : ''}</div>
+          <div class="soc-foot small"><span class="muted">${mine ? `you voted ${mine.vote}` : 'hover a face for its reason · ties fail'}</span><span><button class="mini" data-cvote="yes">Yes</button> <button class="mini" data-cvote="no">No</button></span></div></div>`
+        : `<div class="soc council small" title="${esc(m.votes.map((x) => `${x.name}: ${x.vote}${x.why ? ` (${x.why})` : ''}`).join('\n'))}">🏛 <b>In force</b> to day ${m.to! - v.day + v.seasonDay} · ${esc(MOTIONS[m.kind].effect)}</div>`;
+    }
+    const c = (v.s.coops ?? []).filter((x) => x.status === 'open' || (x.status === 'filled' && v.day - x.day <= 3)).at(-1);
+    if (c) {
+      const filled = c.parts.reduce((t, p) => t + p.qty, 0);
+      const have = me.stock[c.item];
+      const give = Math.min(have, c.qty - filled);
+      const parts = c.parts.map((p) => `${esc(p.id === me.id ? 'you' : p.name)} ${p.qty}${p.bonus ? ` (+${fmt(p.bonus)})` : ''}`).join(' · ');
+      const left = c.due - v.day;
+      html += `<div class="soc coop" title="Bruno pays ${fmt(c.price, 2)} per ${esc(c.item)} on delivery (25% over the market when posted); when the lot is full, ${fmt(c.bonus, 0)} gold is split by share among everyone who chipped in. NPC producers and Silas join at 13:00.">
+        <div class="soc-head"><span>🤝 Co-op: Bruno's caravan</span><span>${filled}/${c.qty} ${icon(c.item, 12)}</span></div>
+        <div class="goal-bar"><b style="width:${Math.min(100, (filled / c.qty) * 100).toFixed(1)}%"></b></div>
+        <div class="small muted">${parts || 'nobody yet'}</div>
+        <div class="soc-foot small"><span>${c.status === 'filled' ? 'full · bonus paid' : `${fmt(c.price, 2)} each + ${fmt(c.bonus, 0)} bonus · ${left > 0 ? `${left + 1} days left` : 'leaves tonight'}`}</span>${c.status === 'open' ? `<button class="mini" data-coop="${c.id}" data-qty="${give}" ${give > 0 ? '' : 'disabled'} title="${give > 0 ? '' : `You have no ${c.item}: buy some in the Market`}">Give ${give || ''}</button>` : ''}</div></div>`;
+    }
+    return html;
+  }
+
   /** the week goal: progress towards ★★★, the day, and the stars when it ends */
   private goalOver = false;
   private goalHtml(): string {
@@ -390,7 +437,7 @@ export class Ui {
       `<span>Quests</span><span class="muted">${next ? `${done}/${QUESTS.length}` : ''}${open ? `${next ? ' · ' : ''}${open} request${open > 1 ? 's' : ''}` : ''}${me.badges?.length ? ` · ★${me.badges.length}` : ''}</span><span>${this.questsOpen ? '▾' : '▸'}</span></button>`;
     const job = (this.v.s.keepers ?? []).filter((k) => k.player === me.id && (k.status === 'working' || this.v.day - (k.reports.at(-1)?.day ?? 0) <= 1)).at(-1);
     const last = job?.reports.at(-1);
-    const goal = this.goalHtml() + (last ? `<div class="kline small" title="${esc(last.text)}" data-kopen>${(() => { const f = this.face(job!.npc); return f ? `<img class="face" src="${f}" alt="">` : ''; })()}<span>${esc(last.text.length > 110 ? `${last.text.slice(0, 108)}…` : last.text)}</span></div>` : '');
+    const goal = this.goalHtml() + this.socialHtml() + (last ? `<div class="kline small" title="${esc(last.text)}" data-kopen>${(() => { const f = this.face(job!.npc); return f ? `<img class="face" src="${f}" alt="">` : ''; })()}<span>${esc(last.text.length > 110 ? `${last.text.slice(0, 108)}…` : last.text)}</span></div>` : '');
     el.classList.toggle('hidden', !goal && !next && !today.length && !me.badges?.length);
     el.classList.toggle('closed', !this.questsOpen);
     if (!this.questsOpen) { el.innerHTML = goal + head; return; }

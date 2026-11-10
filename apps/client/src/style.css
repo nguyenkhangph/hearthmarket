@@ -373,3 +373,20 @@ body[data-mode="online"] #challenge-btn { display: none; }
 #quests .goal-rival { display: flex; justify-content: space-between; gap: 6px; margin: 2px 0; }
 #quests .goal-rival.ahead span:last-child { color: var(--up); }
 #quests .goal-rival.behind span:last-child { color: #ff9b85; }
+
+/* council and co-op (quests card) */
+#quests .soc { margin: 0 0 6px; padding: 5px 6px; border-radius: 6px; background: #ffffff0a; }
+#quests .soc-head, #quests .soc-foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 12px; }
+#quests .soc-head { font-weight: 600; }
+#quests .soc .up { color: var(--up); }
+#quests .soc .down { color: #ff9b85; }
+#quests .cvotes { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin: 4px 0; }
+#quests .cv { display: inline-flex; align-items: center; gap: 1px; font-size: 11px; padding: 0 3px; border-radius: 4px; background: #0003; cursor: help; }
+#quests .cv .face { width: 16px; height: 16px; image-rendering: pixelated; }
+#quests .cv.yes { color: var(--up); }
+#quests .cv.no { color: #ff9b85; }
+#quests .cv.abstain { color: var(--muted); }
+#quests .soc .goal-bar { margin: 4px 0; }
+#quests .soc .mini { padding: 2px 8px; font-size: 11px; line-height: 1.3; min-height: 0; }
+#quests .soc-foot > span:last-child, #quests .soc-foot > button { white-space: nowrap; flex: none; }
+#quests .soc-head > span:last-child { white-space: nowrap; }

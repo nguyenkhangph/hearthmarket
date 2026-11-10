@@ -27,3 +27,4 @@ export * from './regard.ts';
 export * from './health.ts';
 export * from './goal.ts';
 export * from './rival.ts';
+export * from './council.ts';

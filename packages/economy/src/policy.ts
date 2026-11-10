@@ -56,6 +56,8 @@ export const ACTION_METHOD: Record<Action['type'], string> = {
   buy_listing: 'buy_listing',
   cancel_listing: 'cancel_listing',
   start_goal: 'start_goal',
+  council_vote: 'council_vote',
+  coop_give: 'deliver_request',
   accept_request: 'accept_request',
   hire_keeper: 'hire_keeper',
   dismiss_keeper: 'dismiss_keeper',

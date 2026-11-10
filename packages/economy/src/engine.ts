@@ -2,6 +2,8 @@ import { noteDelivery, notePromise, noteTrade } from './regard.ts';
 import type { KeeperJob, KeeperStrategy, Listing } from './types.ts';
 import { GOAL, goalTargets, netWorth, starsFor } from './goal.ts';
 import { RIVAL, rivalStep, rivalWorth } from './rival.ts';
+import { COUNCIL_DAYS, COUNCIL_EVERY, councilInForce, MOTIONS, newMotion, rivalVote, tally } from './council.ts';
+import type { CoopOrder } from './types.ts';
 import {
   ITEM_DEFS, ITEMS, NPC_DEFS, NPCS, NEAR_CONFIG, RECIPES, RECIPE_YIELD, RULES, AI_GUILDS, QUESTS,
   type ItemId, type NpcId, type QuestId,
@@ -37,6 +39,8 @@ export interface VillageOptions {
   botPlayers?: number;
   /** Silas, an AI rival trader who plays the player's game against them (rival.ts) */
   rival?: boolean;
+  /** the village council (council.ts) and co-op orders: shared decisions between players and NPCs */
+  social?: boolean;
 }
 
 /**
@@ -81,6 +85,7 @@ export class Village {
       if (opts.aiGuilds !== false) this.seedAiGuilds();
       for (let i = 0; i < (opts.botPlayers ?? 0); i++) this.addBotPlayer(i);
       if (opts.rival) this.addRival();
+      if (opts.social) this.s.council = [];
     }
   }
 
@@ -203,12 +208,12 @@ export class Village {
       case 10: this.fillOrders(); break;
       case 11: this.npcBuyListings(); break;
       case 12: this.produceAll(); break;
-      case 13: this.fillOrders(); break;
+      case 13: this.fillOrders(); this.npcCoop(); break;
       case 15: this.sellSurplus(); break;
       case 16: this.npcBuyListings(); this.expireListings(); break;
       case 17: this.brunoTrade(); break;
       case 19: this.adventurers(); break;
-      case 20: this.aiTick?.(this); this.tallyVotes(); this.keepersReport(); break;
+      case 20: this.aiTick?.(this); this.tallyVotes(); this.keepersReport(); this.tallyCouncil(); break;
       case 23: this.closeDay(); break;
     }
     rivalStep(this, h);
@@ -227,6 +232,7 @@ export class Village {
   private startDay() {
     const day = this.day;
     this.closeGoals(day);
+    this.socialDay(day);
     const prevImpact = Object.fromEntries(this.s.world.regions.map((r) => [r.id, r.impact]));
     this.s.world = applyWorldDay(this.s.world, this.world.next(), day);
     for (const n of Object.values(this.s.npcs)) {
@@ -302,7 +308,9 @@ export class Village {
       const text = region
         ? `Bring ${qty} ${w.item} before the ${region.headline.toLowerCase()} in ${region.name} drives the price up`
         : `Bring ${qty} ${w.item} ${w.why}`;
-      const r: NpcRequest = { id: this.s.nextId++, npc: w.npc, item: w.item, qty, price, bonus: RULES.requestBonus, day: this.day, text };
+      // council: bonuses up 50% while that motion holds (the contract caps a bonus at 10 gold)
+      const bonus = councilInForce(this, 'bonus_up') ? Math.min(g(10), Math.round(RULES.requestBonus * 1.5)) : RULES.requestBonus;
+      const r: NpcRequest = { id: this.s.nextId++, npc: w.npc, item: w.item, qty, price, bonus, day: this.day, text };
       this.s.requests.push(r);
       this.feed('quest', `${NPC_DEFS[w.npc].name} asks: "${text}" · pays ${fmt(price)} each + ${fmt(r.bonus, 0)} bonus`, w.npc);
     }
@@ -348,6 +356,126 @@ export class Village {
     const r: NpcRequest = { id: this.s.nextId++, npc: o.npc, item: o.item, qty, price, bonus: RULES.bigOrderBonus, day, text, due };
     (this.s.requests ??= []).push(r);
     this.feed('quest', `${NPC_DEFS[o.npc].name} posts a big order: ${qty} ${o.item} within ${RULES.bigOrderDays} days · pays ${fmt(price)} each + ${fmt(r.bonus, 0)} bonus · accept it to take it on`, o.npc);
+  }
+
+  // ---------------------------------------------------------------- council and co-op orders
+  /** Day start: a council motion every third day; a co-op order every fourth; old co-ops close. */
+  private socialDay(day: number) {
+    if (!this.s.council) return;
+    if (day % COUNCIL_EVERY === 0) {
+      const m = newMotion(this, this.s.nextId++);
+      const rival = this.s.players[RIVAL.id];
+      if (rival) m.votes.push({ who: RIVAL.id, kind: 'player', name: rival.name, ...rivalVote(this, RIVAL.id, m.kind) });
+      this.s.council.push(m);
+      if (this.s.council.length > 8) this.s.council.shift();
+      const t = tally(m);
+      this.feed('quest', `Council: "${m.title}". NPCs so far ${t.yes} yes, ${t.no} no · players vote until 20:00`);
+    }
+    for (const c of this.s.coops ?? []) if (c.status === 'open' && day > c.due) {
+      c.status = 'expired';
+      this.feed('quest', `Bruno's caravan left with ${c.qty - this.coopLeft(c)}/${c.qty} ${c.item}: not filled, no bonus`, 'bruno');
+    }
+    if (day % 4 === 2) this.postCoop(day);
+  }
+
+  /** 20:00 on motion day: count every vote; a motion that passes holds for the next two days. */
+  private tallyCouncil() {
+    const m = this.s.council?.at(-1);
+    if (!m || m.status !== 'open' || m.day !== this.day) return;
+    const t = tally(m);
+    m.status = t.passes ? 'passed' : 'failed';
+    if (t.passes) { m.from = this.day + 1; m.to = this.day + COUNCIL_DAYS; }
+    const players = m.votes.filter((x) => x.kind === 'player' && x.who !== RIVAL.id).length;
+    this.feed('quest', `Council ${t.passes ? 'passes' : 'rejects'} "${m.title}" ${t.yes}–${t.no}${players ? ` (${players} player vote${players === 1 ? '' : 's'})` : ''}${t.passes ? `: ${MOTIONS[m.kind].effect} for ${COUNCIL_DAYS} days` : ''}`);
+  }
+
+  private coopLeft(c: CoopOrder) {
+    return c.qty - c.parts.reduce((s, p) => s + p.qty, 0);
+  }
+
+  /** Bruno's caravan: a large lot of one item at 25% over the market, open for three days. */
+  private postCoop(day: number) {
+    const item = (['wheat', 'ore', 'timber'] as ItemId[])[Math.floor(day / 4) % 3];
+    if ((this.s.coops ?? []).some((c) => c.status === 'open')) return;
+    const price = Math.round(midPrice(item, this.s.market.stock[item]) * 1.25);
+    const qty = 30;
+    if (this.s.npcs.bruno.gold < price * qty + g(40)) return;
+    const c: CoopOrder = { id: this.s.nextId++, item, qty, price, bonus: g(10), day, due: day + 2, status: 'open', parts: [] };
+    (this.s.coops ??= []).push(c);
+    if (this.s.coops.length > 6) this.s.coops.shift();
+    this.feed('quest', `Co-op order: Bruno's caravan needs ${qty} ${item} within 3 days · pays ${fmt(price, 2)} each (25% over the market) + ${fmt(c.bonus, 0)} gold split by share when it is full · anyone can chip in`, 'bruno');
+  }
+
+  /** Bruno pays for a share of the caravan; the bonus is split when the lot is full. */
+  private coopTake(c: CoopOrder, who: { kind: 'npc' | 'player'; id: string }, qty: number, tx?: string) {
+    const b = this.s.npcs.bruno;
+    const pay = c.price * qty;
+    b.gold -= pay;
+    b.spentToday += pay;
+    b.stock[c.item] += qty;
+    this.s.ledger.volume += pay;
+    const name = who.kind === 'npc' ? NPC_DEFS[who.id as NpcId].name : this.s.players[who.id]?.name ?? who.id;
+    const part = c.parts.find((p) => p.kind === who.kind && p.id === who.id);
+    if (part) { part.qty += qty; part.paid += pay; if (tx) part.tx = tx; } else c.parts.push({ ...who, name, qty, paid: pay, ...(tx ? { tx } : {}) });
+    this.feed('quest', `${name} adds ${qty} ${c.item} to Bruno's caravan · ${c.qty - this.coopLeft(c)}/${c.qty}${tx ? ` · tx ${short(tx)}` : ''}`, who.kind === 'npc' ? (who.id as NpcId) : 'bruno', tx);
+    if (this.coopLeft(c) <= 0) {
+      c.status = 'filled';
+      // the bonus, by share; rounding leftovers stay with Bruno
+      for (const p of c.parts) {
+        const share = Math.floor((c.bonus * p.qty) / c.qty);
+        if (share <= 0) continue;
+        b.gold -= share;
+        p.bonus = share;
+        if (p.kind === 'npc') this.s.npcs[p.id as NpcId].gold += share;
+        else if (this.s.players[p.id]) this.s.players[p.id].gold += share;
+      }
+      this.feed('quest', `Bruno's caravan is full: ${c.parts.map((p) => `${p.name} ${p.qty}`).join(', ')} · bonus split by share`, 'bruno');
+    }
+  }
+
+  /**
+   * 13:00: the producer of the caravan's item chips in from its surplus (Bruno signs a hire
+   * with his own key), at most 40% of the lot over the days; Silas joins when it pays him.
+   */
+  private npcCoop() {
+    const c = (this.s.coops ?? []).find((x) => x.status === 'open');
+    if (!c) return;
+    const producer = NPCS.find((id) => NPC_DEFS[id].produces[0] === c.item && id !== 'bruno');
+    if (producer) {
+      const n = this.s.npcs[producer];
+      const given = c.parts.find((p) => p.kind === 'npc' && p.id === producer)?.qty ?? 0;
+      const spare = n.stock[c.item] - this.reservedFor(producer, c.item) - 2;
+      const qty = Math.min(spare, Math.floor(c.qty * 0.4) - given, this.coopLeft(c));
+      const b = this.s.npcs.bruno;
+      if (qty > 0 && b.gold >= c.price * qty) {
+        const action: Action = { type: 'hire', seller: producer, item: c.item, qty, price: c.price };
+        if (this.guarded(b, action)) {
+          n.stock[c.item] -= qty;
+          n.gold += c.price * qty;
+          const tx = this.tx(NPC_DEFS.bruno.account, 'hire', { seller: NPC_DEFS[producer].account, item: c.item, qty, price: c.price });
+          this.coopTake(c, { kind: 'npc', id: producer }, qty, tx);
+          this.diary({
+            npc: producer, goal: 'sell my surplus well', saw: `Bruno's caravan pays ${fmt(c.price, 2)} per ${c.item}, the market ${fmt(midPrice(c.item, this.s.market.stock[c.item]), 2)}`,
+            think: '25% over the market for goods I would sell anyway', act: `caravan: ${qty} ${c.item}`, tx, guard: 'ok: Bruno buys inside his daily budget', by: 'rules',
+          });
+        }
+      }
+    }
+    const rival = this.s.players[RIVAL.id];
+    if (rival && c.status === 'open') {
+      const ask = askPrice(c.item, this.s.market.stock[c.item]);
+      const have = rival.stock[c.item];
+      const room = Math.min(this.coopLeft(c), Math.floor(c.qty * 0.3) - (c.parts.find((p) => p.id === RIVAL.id)?.qty ?? 0));
+      if (room > 0 && (have > 0 || ask < c.price * 0.9)) {
+        if (have < room && ask < c.price * 0.9) this.act({ kind: 'player', id: RIVAL.id }, { type: 'market_buy', item: c.item, qty: Math.min(room - have, 8), maxPrice: Math.round(c.price * 0.95) });
+        const q = Math.min(room, rival.stock[c.item]);
+        if (q > 0) this.act({ kind: 'player', id: RIVAL.id }, { type: 'coop_give', id: c.id, qty: q });
+      }
+    }
+  }
+
+  openCoop(): CoopOrder | undefined {
+    return (this.s.coops ?? []).find((c) => c.status === 'open');
   }
 
   // ---------------------------------------------------------------- free-play goal (goal.ts)
@@ -1128,9 +1256,10 @@ export class Village {
       const landed = Math.round(world * (1 + ship / 10_000));
       const exportRev = Math.round(world * (1 - ship / 10_000));
       const band = 1 + (b.plan?.bandBps ?? RULES.brunoBandBps) / 10_000;
-      // import
+      // import (unless the council protects this item)
       let imported = 0;
-      while (imported < RULES.brunoDailyCap) {
+      const noImport = item === 'ore' && councilInForce(this, 'no_ore_import');
+      while (!noImport && imported < RULES.brunoDailyCap) {
         const bid = bidPrice(item, this.s.market.stock[item]);
         if (bid < landed * band) break;
         if (b.gold < landed || this.s.market.treasury < bid) break;
@@ -1153,7 +1282,8 @@ export class Village {
       }
       // export
       let exported = 0;
-      while (exported < RULES.brunoDailyCap && this.s.market.stock[item] > 1) {
+      const noExport = item === 'wheat' && councilInForce(this, 'no_wheat_export');
+      while (!noExport && exported < RULES.brunoDailyCap && this.s.market.stock[item] > 1) {
         const ask = askPrice(item, this.s.market.stock[item]);
         if (exportRev < ask * band) break;
         const f = fee(ask);
@@ -1647,6 +1777,32 @@ export class Village {
         if (!job) return { ok: false, reason: 'no stall keeper working for you' };
         this.endKeeper(job, 'you sent them home');
         return { ok: true, info: 'Stall keeper dismissed, goods back' };
+      }
+      case 'council_vote': {
+        const m = (this.s.council ?? []).find((x) => x.id === a.id);
+        if (!m || m.status !== 'open') return { ok: false, reason: 'the council is not voting on that now' };
+        if (p.bot && !p.rival) return { ok: false, reason: 'players only' };
+        const prev = m.votes.find((x) => x.kind === 'player' && x.who === p.id);
+        if (prev) { prev.vote = a.yes ? 'yes' : 'no'; prev.why = 'changed their vote'; }
+        else m.votes.push({ who: p.id, kind: 'player', name: p.name, vote: a.yes ? 'yes' : 'no', why: '' });
+        const t = tally(m);
+        return { ok: true, info: `You vote ${a.yes ? 'yes' : 'no'} · now ${t.yes} yes, ${t.no} no · counted at 20:00` };
+      }
+      case 'coop_give': {
+        const c = (this.s.coops ?? []).find((x) => x.id === a.id);
+        if (!c || c.status !== 'open') return { ok: false, reason: 'that caravan is not open' };
+        if (!Number.isInteger(a.qty) || a.qty < 1) return { ok: false, reason: 'give at least 1' };
+        const qty = Math.min(a.qty, this.coopLeft(c));
+        if (p.stock[c.item] < qty) return { ok: false, reason: `you have ${p.stock[c.item]} ${c.item}` };
+        const b = this.s.npcs.bruno;
+        const pay = c.price * qty;
+        if (b.gold < pay + g(5)) return { ok: false, reason: 'Bruno is short of gold right now' };
+        p.stock[c.item] -= qty;
+        p.gold += pay;
+        // on chain: a delivery to Bruno at the caravan price (the bonus stays in the game and is reconciled)
+        const tx = this.tx(signer, 'deliver_request', { request_id: c.id, npc: NPC_DEFS.bruno.account, item: c.item, qty, price: c.price, bonus: 0 });
+        this.coopTake(c, { kind: 'player', id: p.id }, qty, tx);
+        return { ok: true, tx, info: `+${fmt(pay)} gold for ${qty} ${c.item}${(c.status as string) === 'filled' ? ' · caravan full, bonus paid' : ''}` };
       }
       case 'start_goal': {
         const best = Math.max(p.goal?.best ?? 0, p.goal?.result?.stars ?? 0);

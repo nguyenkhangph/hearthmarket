@@ -45,7 +45,7 @@ export class Game {
     readonly chain: ChainAdapter,
   ) {
     const world = opts.world ?? (opts.replayDays ? new ReplayWorld(opts.replayDays) : undefined);
-    this.village = createVillage({ seed: opts.seed, world, rival: opts.rival ?? true });
+    this.village = createVillage({ seed: opts.seed, world, rival: opts.rival ?? true, social: opts.rival ?? true });
     this.mirror = opts.mirror;
     if (this.mirror) {
       this.village.chainHook = this.mirror.hook;
