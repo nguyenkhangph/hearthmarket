@@ -99,3 +99,18 @@ describe('co-op orders', () => {
     expect(JSON.stringify(a.s.coops)).toBe(JSON.stringify(b.s.coops));
   });
 });
+
+describe('co-op orders when Bruno is short', () => {
+  it('a smaller caravan rather than none', () => {
+    const v = createVillage({ seed: 17, rival: true, social: true });
+    v.addPlayer('khang', 'Khang');
+    while (v.day % 4 !== 1) v.runDays(1);
+    while (v.hour !== 23) v.step();
+    v.s.npcs.bruno.gold = g(90); // conservation is not checked here
+    v.step(); // day start: the caravan is posted
+    const c = v.openCoop();
+    expect(c).toBeTruthy();
+    expect(c!.qty).toBeLessThan(30);
+    expect(c!.qty).toBeGreaterThanOrEqual(12);
+  });
+});

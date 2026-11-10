@@ -398,8 +398,9 @@ export class Village {
     const item = (['wheat', 'ore', 'timber'] as ItemId[])[Math.floor(day / 4) % 3];
     if ((this.s.coops ?? []).some((c) => c.status === 'open')) return;
     const price = Math.round(midPrice(item, this.s.market.stock[item]) * 1.25);
-    const qty = 30;
-    if (this.s.npcs.bruno.gold < price * qty + g(40)) return;
+    // a smaller caravan when Bruno is short of gold, rather than none at all
+    const qty = Math.min(30, Math.floor((this.s.npcs.bruno.gold - g(40)) / price));
+    if (qty < 12) return;
     const c: CoopOrder = { id: this.s.nextId++, item, qty, price, bonus: g(10), day, due: day + 2, status: 'open', parts: [] };
     (this.s.coops ??= []).push(c);
     if (this.s.coops.length > 6) this.s.coops.shift();
