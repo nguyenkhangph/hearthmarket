@@ -124,11 +124,16 @@ function decisions(v: Village) {
     const p = s.npcs[id].plan!;
     return { kind: 'plan' as const, day: p.day, who: NPC_DEFS[id].name, by: p.by, source: sourceOf(p.by), why: p.why ?? '' };
   });
-  const deals = (s.deals ?? []).slice(-6).map((d) => ({
+  const row = (d: NonNullable<typeof s.deals>[number]) => ({
     kind: 'deal' as const, day: d.day, who: `${NPC_DEFS[d.buyer].name} ← ${NPC_DEFS[d.seller].name}`, by: d.by, source: sourceOf(d.by),
     why: d.status === 'agreed' ? `${d.item} at ${(d.price! / 100).toFixed(2)}` : `${d.item}: no deal`,
-  }));
-  return [...deals, ...plans].sort((a, b) => b.day - a.day).slice(0, 12);
+  });
+  // the latest model deals first (they can be a few days old when nobody is online), then the latest rule days
+  const all = s.deals ?? [];
+  const model = all.filter((d) => sourceOf(d.by) === 'llm').slice(-4).map(row);
+  const other = all.filter((d) => sourceOf(d.by) !== 'llm').slice(-3).map(row);
+  const llmFirst = (a: { source: string; day: number }, b: { source: string; day: number }) => Number(b.source === 'llm') - Number(a.source === 'llm') || b.day - a.day;
+  return [...model, ...plans, ...other].sort(llmFirst).slice(0, 12);
 }
 
 /** "llm" only when the words came from a model; a rules fallback says so. */

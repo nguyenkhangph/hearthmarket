@@ -216,7 +216,7 @@ function funnel(st: Record<string, number | boolean>) {
     ['Failed', n(st.failed), 'refused by the contract (red team on purpose) or out of goods', 'down'],
     ['Kept in the game', kept, `${n(st.paused)} nobody online · ${n(st.budgeted)} gas budget · ${n(st.heldBack)} held back`, ''],
     ['Reconciled', n(st.reconciled), `carried to the chain by ${n(st.reconciles)} reconcile call(s)`, 'up'],
-    ['Waiting for reconcile', n(st.unsynced), 'back to 0 when the next reconcile lands', n(st.unsynced) ? 'down' : 'up'],
+    ['Kept in game since the last reconcile', n(st.unsynced), 'normal during the day: the next daily reconcile writes them to the chain and this goes back to 0', ''],
   ];
   const max = Math.max(1, ...rows.map((r) => r[1]));
   return rows.map(([k, v, why, cls]) => `<div class="kv small" title="${esc(why)}"><span>${k}<div class="muted small">${esc(why)}</div></span><span class="mono ${cls}">${v}</span></div>${bar(v, max)}`).join('');
@@ -231,7 +231,7 @@ function aiCard(d: Dash) {
   return `<div class="kv small"><span>Agent deals by the model</span><span class="mono">${a.deals.model}/${deals} (${share}%)</span></div>
   <div class="kv small"><span>Deals by rules · model failed</span><span class="mono">${a.deals.rules} · ${a.deals.fallback}</span></div>
   ${a.plans ? `<div class="kv small"><span>Day plans by the model · failed</span><span class="mono">${a.plans.model} · ${a.plans.failed}</span></div>` : '<div class="muted small">No model configured: every decision is rules.</div>'}
-  <div class="muted small">The model (${esc(a.model ?? 'none')}) runs only while someone plays or watches; otherwise rules decide, and each decision says which.</div>
+  <div class="muted small">The model (${esc(a.model ?? 'none')}) decides every day while someone plays or watches, and one day in every 15 minutes otherwise; rules decide the rest, and each decision says which. Model decisions are listed first.</div>
   ${(d.decisions ?? []).slice(0, 8).map((x) => `<div class="kv small"><span>day ${x.day} · ${x.kind} · <b>${esc(x.who)}</b> <span class="muted">${esc(x.why.slice(0, 60))}</span></span>${tag(x.source)}</div>`).join('')}`;
 }
 

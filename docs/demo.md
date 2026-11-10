@@ -17,22 +17,14 @@ Hearthmarket is a village where six AI agents run real businesses on NEAR, and y
 - [ ] Sound on (🔊): the coin chime is part of the feel. Record at 1920×1080, browser zoom 100%.
 - [ ] Never show the private key (Account → Claim) or the Google email on screen.
 
-## Video, about 2:30
+## Video (made, v7)
 
-| Time | Screen | Voice-over |
-| --- | --- | --- |
-| 0:00–0:10 | Login card → **Sign in with Google** → the village, NPCs walking | "Hearthmarket: six AI agents run a village economy on NEAR. You sign in with Google. No wallet." |
-| 0:10–0:25 | Hover **Mike** → the "why this price" tooltip; click → panel with **Diary** and **Deals with other agents** | "Every agent explains its price from the same numbers it trades on: stock, the world price and the weather behind it, today's deal with another agent." |
-| 0:25–0:45 | Mike's panel → **Haggle**: **Push low** (he refuses, counter), **Halfway** (he comes down), **Take** → "Deal". Show the speech bubbles over Mike on the map | "You haggle with them. Mike opens high and comes down over three rounds; lowball him and he remembers. The deal settles as your order, filled by Mike's own key." |
-| 0:45–1:10 | **Market → Stall board**: list 3 wheat 10% under the market. **Prove on NEAR**: `relay_stall_list` queued → on chain → explorer shows the stalls contract | "You can sell to them. Your goods go into escrow in a separate stalls contract on NEAR." |
-| 1:10–1:25 | Time reaches 11:00 → feed "Bruno bought your 3 wheat" → coins fly to the purse → Prove on NEAR: "Bruno bought your listing" → explorer: `npc_stall_buy` signed by `bruno.hearthmarket.testnet` | "At eleven the merchant checks the board and buys, signing with his own key. The seller is paid in the same transaction." |
-| 1:25–1:45 | Guest window: **Hire a stall keeper** → Buba, *Sell fast* → **⏩ 7 days** → bottom left: week goal with stars and **vs Silas 🤖**; Buba's 20:00 report; feed line "Silas undercuts …" | "Or hire one to sell for you, with a strategy you pick; it reports every evening what it sold and why. And you are not alone: Silas, an AI rival, buys dips, undercuts your listings and takes the orders you leave open." |
-| — | (optional, +15 s) Bottom left: **🏛 Council** card, hover Chloe ("cheaper wheat") and Buba ("exports pay me more"), press **Yes**; **🤝 Bruno's caravan** → **Give** | "They govern with you: the council votes by interest and your vote often decides it; and they build with you: Bruno's caravan takes a share from players, NPCs and Silas, paid on delivery." |
-| 1:45–1:55 | World panel: weather headlines, "World money … tokenized gold XAUT … NEAR Intents" | "World prices follow real weather; village gold follows the real price of gold, quoted by NEAR Intents." |
-| 1:55–2:15 | **NPCs → Theo → Red team**: *send all gold* → `BLOCKED by the signer`; a contract-layer attack → "refused by the contract · tx" → explorer shows the failed tx | "The worst case: an agent whose brain obeys any prompt injection. The signer refuses what the key cannot do; what passes the key, the contract refuses, in public." |
-| 2:15–2:30 | `/dashboard`: KPIs, agents ranked by net worth, leaderboard with Silas, proof list → README *Live on NEAR testnet* | "Everything is on a public dashboard, and every claim in the README links to a transaction. Built at NEAR HACKATHON." |
+Two cuts, rendered from the live client in guest mode with narration (Kokoro TTS), subtitles, original music and zooms; every on-chain claim in them is a real testnet transaction:
 
-Shorter cut (about 90 s): 0:00–0:10, 0:25–0:45, 0:45–1:25, 1:55–2:15, then the closing line.
+- **Full, 3:06** (`hearthmarket-demo-v7.mp4`): hook · Google sign-in · the village · real weather and the gold price · agents negotiate · haggle over three rounds · sell from your stall (escrow, Bruno buys with his own key) · hire a keeper and race Silas · council and co-op caravan · red team · the refused transaction on Nearblocks · every claim on chain · outro.
+- **Short, 2:18** (`hearthmarket-demo-v7-short.mp4`): for an X account without Premium (videos up to 2:20). Drops sign-in, weather, agent-to-agent deals and the claims card.
+
+The NEAR rules set no length limit; post the full cut if the X account allows it. After posting, put the post's link in the README (top, next to *Play*).
 
 ## X post (draft)
 
