@@ -421,3 +421,30 @@ describe('chain mirror: stall sweep after a restart', () => {
     expect(m.translate(playerSigner('khang'), 'list_item', { listing_id: 4, item: 'ore', qty: 1, price: 500 })).toBeNull();
   });
 });
+
+describe('chain mirror: crafts that would fail', () => {
+  it('holds back a craft whose inputs are not on chain, and the NPC\'s next sale with it', async () => {
+    const goods: Record<string, number> = { ore: 1, timber: 5 };
+    const { m, chain } = mirror({ maxPerMinute: 1000, maxQueue: 100, goodsOf: async (_a, item) => goods[item] });
+    const theo = NPC_DEFS.theo.account;
+    expect(m.hook(theo, 'craft', { item: 'sword', crafts: 2 })).toBeTruthy(); // needs 4 ore
+    // queued behind the craft: when the craft is held back, the sale is held back too
+    m.hook(theo, 'market_sell', { item: 'sword', qty: 2, min_price: 100 });
+    await m.idle();
+    expect(chain.calls.filter((c) => c.method === 'craft' || c.method === 'market_sell')).toHaveLength(0);
+    expect(m.stats.failed).toBe(0);
+    expect(m.stats.heldBack).toBeGreaterThanOrEqual(2);
+    goods.ore = 10;
+    const { m: m2, chain: chain2 } = mirror({ maxPerMinute: 1000, maxQueue: 100, goodsOf: async (_a, item) => goods[item] });
+    expect(m2.hook(theo, 'craft', { item: 'sword', crafts: 2 })).toBeTruthy();
+    await m2.idle();
+    expect(chain2.calls.filter((c) => c.method === 'craft')).toHaveLength(1);
+  });
+
+  it('a delivery kept off chain (the AI rival) marks the NPC, so its spending waits for the reconcile', () => {
+    const { m } = mirror();
+    expect(m.hook(playerSigner('ai-rival'), 'deliver_request', { request_id: 1, npc: NPC_DEFS.chloe.account, item: 'wheat', qty: 3, price: 250, bonus: 300 })).toBeNull();
+    expect(m.hook(NPC_DEFS.chloe.account, 'market_sell', { item: 'bread', qty: 2, min_price: 100 })).toBeNull();
+    expect(m.stats.heldBack).toBe(1);
+  });
+});

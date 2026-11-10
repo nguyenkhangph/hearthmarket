@@ -117,6 +117,8 @@ export class Negotiator {
   private running = false;
   calls = 0;
   failures = 0;
+  /** when the model last struck a deal (ISO), for the health check */
+  lastModelAt: string | null = null;
   readonly sources: DealSources = { model: 0, rules: 0, fallback: 0 };
 
   constructor(
@@ -167,6 +169,7 @@ export class Negotiator {
           res = await negotiateLlm(model, v, p);
           by = model.name;
           this.sources.model++;
+          this.lastModelAt = new Date().toISOString();
         } else {
           res = negotiateRules(v, p);
           this.sources.rules++;

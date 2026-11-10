@@ -1,6 +1,6 @@
 import {
-  ITEMS, ITEM_DEFS, NPCS, NPC_DEFS, NPC_KEY_METHODS, OPERATOR_METHODS, PLAYER_SIGNER_SUFFIX, RULES,
-  type Village,
+  ITEMS, ITEM_DEFS, NPCS, NPC_DEFS, NPC_KEY_METHODS, OPERATOR_METHODS, PLAYER_SIGNER_SUFFIX, RECIPES, RULES,
+  type ItemId, type Village,
 } from '@hearth/economy';
 import type { ChainAdapter } from './signer.ts';
 
@@ -46,6 +46,11 @@ export interface MirrorOptions {
    * goods in the stalls contract and purchases pay through it. Off = listings stay in the game.
    */
   stalls?: boolean;
+  /**
+   * An NPC's goods on chain right now (optimistic): a craft whose inputs are not there is kept in
+   * the game (`heldBack`) instead of failing on chain. Optional; without it crafts are sent as is.
+   */
+  goodsOf?: (account: string, item: string) => Promise<number | undefined>;
   /** a slow or offline chain must not stall the village */
   log?: (line: string) => void;
   now?: () => number;
@@ -132,7 +137,7 @@ export class ChainMirror {
    * NPC's chain balance was behind) are carried to the chain by the next `reconcile`: `unsynced`
    * counts those still waiting (back to 0 when a reconcile lands), `reconciled` those it covered.
    */
-  readonly stats = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0, unsynced: 0, heldBack: 0, reconciled: 0, reconciles: 0 };
+  readonly stats: { sent: number; ok: number; failed: number; skipped: number; budgeted: number; batched: number; paused: number; unsynced: number; heldBack: number; reconciled: number; reconciles: number; craftChecks?: number } = { sent: 0, ok: 0, failed: 0, skipped: 0, budgeted: 0, batched: 0, paused: 0, unsynced: 0, heldBack: 0, reconciled: 0, reconciles: 0 };
   private keptSinceReconcile = 0;
   private keepInGame(kind: 'paused' | 'budgeted' | 'heldBack') {
     this.stats[kind]++;
@@ -172,12 +177,22 @@ export class ChainMirror {
       return null;
     }
     const calls = this.translate(signer, method, args);
-    if (!calls) return null;
+    if (!calls) {
+      // goods that moved in the game only: that NPC's chain inventory is now different, so its
+      // next craft or sale waits for the reconcile instead of failing (a delivery kept off chain,
+      // an NPC trade with a stall or the AI rival)
+      if (npc && method !== 'craft') this.markDrift(signer); // a craft of 0 changes nothing
+      const counterparty = typeof args.npc === 'string' && this.isNpc(args.npc) ? args.npc : undefined;
+      if (counterparty) this.markDrift(counterparty);
+      return null;
+    }
     if (npc && method === 'produce' && this.opts.batchProduce) return this.collect(calls[0]);
     // an NPC whose earlier call did not reach the chain holds different goods there than in the
     // game: anything that spends goods would fail, so wait for the next reconcile instead
     if (npc && this.outOfSync(signer, method, args)) {
       this.keepInGame('heldBack');
+      // a hire held back for the seller's sake leaves the buyer short of those goods on chain
+      this.markDrift(signer);
       return null;
     }
     const near = this.balances[signer];
@@ -231,6 +246,25 @@ export class ChainMirror {
 
   private isNpc(signer: string) {
     return NPCS.some((id) => NPC_DEFS[id].account === signer);
+  }
+
+  /** True when the chain holds fewer inputs than this craft needs (unknown counts as enough). */
+  private async craftShort(c: Call): Promise<boolean> {
+    const recipe = RECIPES[c.args.item as ItemId];
+    if (!recipe) return false;
+    const crafts = Number(c.args.crafts) || 0;
+    try {
+      for (const [input, per] of Object.entries(recipe)) {
+        const have = await this.opts.goodsOf!(c.signer, input);
+        if (have !== undefined && have < per! * crafts) {
+          this.stats.craftChecks = (this.stats.craftChecks ?? 0) + 1;
+          return true;
+        }
+      }
+    } catch {
+      /* the RPC is slow or down: send it and let the contract decide */
+    }
+    return false;
   }
 
   /** Calls that spend goods (or rely on a seller's goods) are held back for a drifted NPC. */
@@ -635,7 +669,14 @@ export class ChainMirror {
         const sellerD = c.method === 'hire' ? this.failedAt.get(String(c.args.seller)) ?? 0 : 0;
         if ((SPENDS_GOODS.has(c.method) || c.method === 'hire') && Math.max(d, sellerD) > queuedAt) {
           this.keepInGame('heldBack');
+          if (this.isNpc(c.signer)) this.markDrift(c.signer, true);
           throw new HeldBack(`${c.method} held back until the next reconcile`);
+        }
+        // a craft checks its inputs on chain first: short means held back, not a failed transaction
+        if (c.method === 'craft' && this.opts.goodsOf && (await this.craftShort(c))) {
+          this.keepInGame('heldBack');
+          this.markDrift(c.signer, true);
+          throw new HeldBack('craft held back: inputs not on chain yet');
         }
         this.stats.sent++;
         // the signer half of the guard: a key only ever signs the methods on that key

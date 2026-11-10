@@ -113,6 +113,8 @@ export interface BalanceReader {
   balance(account: string): Promise<number>;
   /** read-only contract call */
   view<T = unknown>(contract: string, method: string, args?: Record<string, unknown>): Promise<T | undefined>;
+  /** NEP-245 balance at the latest (optimistic) block, so a call that just landed counts */
+  goods(contract: string, account: string, item: string): Promise<number | undefined>;
 }
 
 /** Adds a balance reader (spendable NEAR = balance minus storage) to a NearChain. */
@@ -125,6 +127,10 @@ export function withBalances(chain: NearChain): NearChain & BalanceReader {
     },
     async view<T>(contractId: string, method: string, args: Record<string, unknown> = {}) {
       return (await provider.callFunction({ contractId, method, args })) as T | undefined;
+    },
+    async goods(contractId: string, account: string, item: string) {
+      const v = await provider.callFunction({ contractId, method: 'mt_balance_of', args: { account_id: account, token_id: item }, blockQuery: { finality: 'optimistic' } });
+      return v === undefined ? undefined : Number(v);
     },
   });
 }

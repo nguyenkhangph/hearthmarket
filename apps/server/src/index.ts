@@ -84,7 +84,16 @@ const planner = llm ? new DayPlanner(brain, { everyMs: config.planEveryMinutes *
 let lastViewerAt = 0;
 const watchers = () => sessions.size + (Date.now() - lastViewerAt < 60_000 ? 1 : 0);
 const someoneOnline = () => watchers() > 0;
-const negotiator = new Negotiator(llm, { everyMs: config.dealEveryMinutes * 60_000, log, useModel: someoneOnline });
+// nobody online: still one model day every NPC_IDLE_MODEL_MINUTES (deals and plans), so the recent
+// history a visitor sees always holds model decisions, at a bounded cost
+let lastIdleModel = { deals: 0, plans: 0 };
+const idleModelDue = (k: 'deals' | 'plans') => {
+  const every = config.idleModelMinutes * 60_000;
+  if (!every || Date.now() - lastIdleModel[k] < every) return false;
+  lastIdleModel = { ...lastIdleModel, [k]: Date.now() };
+  return true;
+};
+const negotiator = new Negotiator(llm, { everyMs: config.dealEveryMinutes * 60_000, log, useModel: () => someoneOnline() || idleModelDue('deals') });
 
 // ---------------------------------------------------------------- players
 let secret = config.auth.playerKeySecret;
@@ -120,6 +129,7 @@ if (config.chain === 'near') {
     batchProduce: config.near.batchProduce,
     minNpcNear: config.near.minNpcNear,
     stalls: config.near.stallsOnChain,
+    goodsOf: (account, item) => near.goods(config.near.contract, account, item),
     log,
   });
   log(`gas budget: ${config.near.npcTxPerHour || 'unlimited'} calls per NPC per hour, produce ${config.near.batchProduce ? 'batched per day' : 'per tick'}, day sync every ${config.near.daySeconds}s, ${config.near.idleSeconds ? `pause ${config.near.idleSeconds}s after the last player leaves` : 'never pauses'}`);
@@ -169,7 +179,7 @@ function onPresence(players: number) {
 
 const game = new Game(
   { seed: config.seed, world, mirror, worldPost: currentWorldPost, onNewDay: (v) => {
-    if (someoneOnline()) planner?.onNewDay(v);
+    if (someoneOnline() || (planner && idleModelDue('plans'))) planner?.onNewDay(v);
     void negotiator.onNewDay(v);
   } },
   brain, signer, chain,
@@ -228,7 +238,7 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true, commit: (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT ?? 'dev').slice(0, 7), day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
       chainStats: mirror ? { ...mirror.stats, active: mirror.isActive, balances: mirror.balances } : undefined, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
-      deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures, sources: negotiator.sources },
+      deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures, sources: negotiator.sources, lastModelAt: negotiator.lastModelAt, idleModelMinutes: config.idleModelMinutes },
       challengeContracts: contractCalls,
     }));
   } else if (req.url === '/api/config') {

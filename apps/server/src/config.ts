@@ -21,6 +21,12 @@ export const config = {
   planEveryMinutes: num(env.NPC_PLAN_MINUTES, 5),
   /** minutes between two LLM negotiations of the same buyer/seller pair (rules negotiate daily) */
   dealEveryMinutes: num(env.NPC_DEAL_MINUTES, 4),
+  /**
+   * with nobody online, the agents still think with the model once every this many minutes
+   * (deals and day plans), so a judge who arrives finds model decisions in the recent history.
+   * 0 = rules only while nobody is online.
+   */
+  idleModelMinutes: num(env.NPC_IDLE_MODEL_MINUTES, 15),
   llm: {
     primary: {
       baseUrl: env.NEAR_AI_BASE_URL || NEAR_AI_DEFAULT_BASE_URL,
