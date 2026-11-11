@@ -11,8 +11,9 @@ import type { ChainAdapter } from './signer.ts';
  * yet), then every NPC action it accepted is sent to the contract, signed by that NPC's
  * own function-call key, where the daily budget, recipes, order escrow and "NPCs never
  * transfer gold" are checked again. Players without a wallet are relayed by the operator
- * key. Once a game day the operator starts the chain's day with `reconcile` (the drift is
- * logged as events) and posts the world data.
+ * key. At a game day's start, at most once every `minDayMs` of real time, the operator
+ * `reconcile`s the chain (the drift is logged as events) and posts the world data; on the
+ * other game days it only turns the contract's day with `advance_day`.
  *
  * One queue per signing key, so a key never has two transactions in flight (nonces).
  */
@@ -561,7 +562,7 @@ export class ChainMirror {
   readonly selfCustody = new Set<string>();
 
   /**
-   * A player exported their key. From now on the operator's daily `reconcile` may not touch
+   * A player exported their key. From now on the operator's `reconcile` may not touch
    * their balances: the contract records it, one-way (`relay_self_custody`, version 5+).
    */
   claimed(account: string): string | null {

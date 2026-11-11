@@ -1,6 +1,12 @@
 <!-- NEAR HACKATHON HACKATHON.md -->
 # NEAR HACKATHON - HACKATHON.md
 
+> **Snapshot, partly out of date.** The live file (https://nearhackathon.com/HACKATHON.md) is the authority. Checked on 11 Nov 2026, it adds:
+> - **Rules Q-000 to Q-017**: work counts from the 19 Oct 2026 announcement (earlier commits are baseline); libraries and AI-generated code are allowed but listed in the README; a hosted demo is a plus, kept up through 18 Nov and ideally 25 Nov; the repo stays public with a LICENSE file through judging; one person may submit at most 2 independent projects, each README naming the other; Claude Code and Codex screen projects, humans decide.
+> - **Corrections** after submitting: never resubmit; use https://nearhackathon.com/request-changes (email, NEAR account and repo as submitted, the fields to change, a Discord or Telegram handle).
+> - **Submission body**: at most 12,000 bytes; `email` at most 2 submissions; `projectUrl` unique per repository; `website` is a spam trap and must be absent or empty. Status codes 201, 400, 403, 409, 413, 503.
+> - **Prizes**: $250,000 paid in NEAR: grand prize $55,000; per track $10,000 / $3,000 / $2,000 for 1st to 3rd (13 tracks).
+
 Instructions for the AI coding agent helping a team take part in NEAR HACKATHON. The live version is https://nearhackathon.com/HACKATHON.md; read it again before submitting, because dates and rules may change.
 
 ## Start here

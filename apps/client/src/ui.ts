@@ -559,7 +559,7 @@ export class Ui {
     <p class="muted small">Gold is locked in the contract until delivery. Refunded if the deadline passes.</p>
     <div class="row"><button class="primary" data-act="order">Order ${f.qty} × ${esc(ITEM_DEFS[f.item].name.toLowerCase())}</button></div>
     ${myOrders.length ? `<h4>Your orders</h4>${myOrders.map((o) => `<div class="kvrow small"><span>#${o.id} ${o.qty}× ${o.item} · max ${fmt(o.maxPrice)}</span><span>${o.status === 'open' ? `${o.filled}/${o.qty} · due day ${o.deadlineDay} <button data-act="cancel" data-id="${o.id}">Cancel</button>` : o.status}</span></div>`).join('')}` : ''}
-    <p class="muted small">Every trade shows where it stands (simulated, queued, on chain, failed, or kept in the game and reconciled daily): <button class="linkish" data-act="prove">⛓ Prove on NEAR</button></p>
+    <p class="muted small">Every trade shows where it stands (simulated, queued, on chain, failed, or kept in the game and reconciled): <button class="linkish" data-act="prove">⛓ Prove on NEAR</button></p>
   </section>
 </div>
 ${this.stallBoard()}`;
@@ -708,7 +708,7 @@ ${this.stallBoard()}`;
   <section class="pcard">
     <h3>⛓ Prove on NEAR</h3>
     <p class="small">Your market trades, orders, request deliveries, stall-board listings and badges are relayed to NEAR testnet; each row shows its state, and only real transactions get an explorer link. A listing's goods wait in the stalls contract's escrow; the NPC that buys it signs with its own key.</p>
-    <p class="muted small">What stays in the game: guild-stall and guild trades, a hired keeper's commission, quest rewards, eating and upkeep. Once a game day the operator's <span class="mono">reconcile</span> writes the game's balances to the chain and logs how much it changed. Claim your key (Account) and reconcile never touches your account again.</p>
+    <p class="muted small">What stays in the game: guild-stall and guild trades, a hired keeper's commission, quest rewards, eating and upkeep. Every 10 real minutes (about 5 game days on the hosted village) the operator's <span class="mono">reconcile</span> writes the game's balances to the chain, so the chain's game day can trail the village by a few days and logs how much it changed. Claim your key (Account) and reconcile never touches your account again.</p>
     <p class="muted small"><b>Kept in game · reconciled</b> on an NPC row means the call was held back on purpose, not lost: the NPC's goods on chain were behind the game (a delivery or trade that stayed in the game, a call over its gas budget), so a craft or sale that would have failed is not sent. Before each craft the server reads the NPC's inputs on chain. The next <span class="mono">reconcile</span> catches the chain up. The dashboard's settlement funnel counts sent, landed, failed, held back and reconciled calls: <a href="./dashboard.html" target="_blank" rel="noopener">Live ↗</a></p>
     <div class="kvrow small"><span>Your account</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(acct)}">${esc(acct.slice(0, 10))}…${esc(acct.slice(-6))} ↗</a></div>
     <div class="kvrow small"><span>Game contract</span><a class="tx" target="_blank" rel="noopener" href="${EXPLORER}/address/${esc(NEAR_CONFIG.contract)}">${esc(NEAR_CONFIG.contract)} ↗</a></div>

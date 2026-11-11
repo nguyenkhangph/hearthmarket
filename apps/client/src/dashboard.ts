@@ -206,7 +206,7 @@ const n = (x: number | boolean | undefined) => Number(x ?? 0);
 
 /**
  * Sent → landed or refused on chain; the rest kept in the game (nobody online, gas budget,
- * an NPC whose chain balance was behind) and carried to the chain by the daily reconcile.
+ * an NPC whose chain balance was behind) and carried to the chain by the next reconcile.
  */
 function funnel(st: Record<string, number | boolean>) {
   const kept = n(st.paused) + n(st.budgeted) + n(st.heldBack);
@@ -216,7 +216,7 @@ function funnel(st: Record<string, number | boolean>) {
     ['Failed', n(st.failed), 'refused by the contract (red team on purpose) or out of goods', 'down'],
     ['Kept in the game', kept, `${n(st.paused)} nobody online · ${n(st.budgeted)} gas budget · ${n(st.heldBack)} held back`, ''],
     ['Reconciled', n(st.reconciled), `carried to the chain by ${n(st.reconciles)} reconcile call(s)`, 'up'],
-    ['Kept in game since the last reconcile', n(st.unsynced), 'normal during the day: the next daily reconcile writes them to the chain and this goes back to 0', ''],
+    ['Kept in game since the last reconcile', n(st.unsynced), 'normal between reconciles: the next one (every 10 real minutes, about 5 game days) writes them to the chain and this goes back to 0', ''],
   ];
   const max = Math.max(1, ...rows.map((r) => r[1]));
   return rows.map(([k, v, why, cls]) => `<div class="kv small" title="${esc(why)}"><span>${k}<div class="muted small">${esc(why)}</div></span><span class="mono ${cls}">${v}</span></div>${bar(v, max)}`).join('');

@@ -33,7 +33,7 @@ irm https://github.com/near/near-cli-rs/releases/latest/download/near-cli-rs-ins
 [Environment]::SetEnvironmentVariable("AWS_LC_SYS_PREBUILT_NASM", "1", "User")
 $env:AWS_LC_SYS_PREBUILT_NASM = "1"
 
-npm run contract:test      # 45 passed
+npm run contract:test      # 65 passed (npm run stalls:test: 16)
 ```
 
 ## 2. Create the contract account
@@ -98,7 +98,7 @@ chain ok   hearthmarket.testnet relay_market_buy tx=...      (after you buy some
 
 In the feed, real hashes are links to testnet.nearblocks.io; `off-chain` marks actions that stay in the engine (guild stalls, guild funds, council votes, the AI rival, AI guild bots; stall-board listings go on chain once version 6 and `STALLS_ONCHAIN=1` are in place), `failed` shows what the contract refused (the reason is in the server log). Your account chip (top right) links to your player account on the explorer.
 
-On chain today: NPC production, crafting, NPC deals, NPC market trades, Bruno's world trades, your market trades and orders (relayed, you have no wallet), order fills, world data, badges. Once a game day the operator `reconcile`s the chain to the engine's books (see `docs/interface.md`).
+On chain today: NPC production, crafting, NPC deals, NPC market trades, Bruno's world trades, your market trades and orders (relayed, you have no wallet), order fills, world data, badges. Every `CHAIN_DAY_SECONDS` (default 600 s, about 5 game days at 5 s per game hour) the operator `reconcile`s the chain to the engine's books (see `docs/interface.md`).
 
 ## Upgrade from version 1
 

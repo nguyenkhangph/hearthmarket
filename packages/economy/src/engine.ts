@@ -2080,7 +2080,7 @@ export const TX_STATE_HINT: Record<TxState, string> = {
   queued: 'queued: on its way to NEAR',
   finalized: 'on NEAR testnet: executed, final within about 2 s',
   failed: 'failed: refused on chain',
-  reconciled: 'kept in the game; the daily reconcile writes the balances to the chain',
+  reconciled: 'kept in the game; the next reconcile (every few game days) writes the balances to the chain',
 };
 
 /** Short label for a tx hash in the feed: `5irr…1Q`, `pending…`, `failed`, `off-chain`, `sim`. */
