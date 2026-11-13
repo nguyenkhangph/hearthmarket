@@ -20,6 +20,7 @@ The same question matters outside games. AI agents are starting to buy and sell 
 ## Play it now
 
 - **Game:** https://hearthmarket.space (mirror: https://hearthmarket.vercel.app) (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
+- **Judges:** [docs/judge-guide.md](docs/judge-guide.md): five claims, each checked in under a minute with a testnet transaction, and how to see whether the model or the rules are deciding right now
 - **Live economy:** https://hearthmarket.space/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
 
 ## 3-day harvest challenge (8–10 minutes)

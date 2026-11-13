@@ -27,7 +27,7 @@ export interface DashboardExtras {
   /** NEAR account of a signed-in player, for the trader board */
   playerAccount?: (playerId: string) => string | null;
   /** where the agents' decisions came from since the server started */
-  ai?: { deals: { model: number; rules: number; fallback: number }; plans?: { model: number; failed: number }; model?: string };
+  ai?: { deals: { model: number; rules: number; fallback: number }; plans?: { model: number; failed: number }; model?: string; status?: { lastOkAt?: string; lastErrorAt?: string; lastError?: string; errors: number } };
 }
 
 /**

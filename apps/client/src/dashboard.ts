@@ -40,7 +40,7 @@ type Dash = {
   feed: { t: number; kind: string; text: string; tx?: string }[];
   traders?: { name: string; worth: number; gold: number; goods: number; badges: number; guild?: string; account?: string }[];
   redTeamers?: { name: string; runs: number; blocked: number; onChain: number }[];
-  ai?: { deals: { model: number; rules: number; fallback: number }; plans?: { model: number; failed: number }; model?: string };
+  ai?: { deals: { model: number; rules: number; fallback: number }; plans?: { model: number; failed: number }; model?: string; status?: { lastOkAt?: string; lastErrorAt?: string; lastError?: string; errors: number } };
   decisions?: { kind: 'plan' | 'deal'; day: number; who: string; by: string; source: 'llm' | 'rules' | 'fallback'; why: string }[];
   deals: { day: number; buyer: string; seller: string; item: string; status: string; price?: number; maxQty: number; used: number; by: string; guard: string[]; rounds: { who: string; say: string; price?: number; accept?: boolean }[] }[];
 };
@@ -228,7 +228,13 @@ function aiCard(d: Dash) {
   const deals = a.deals.model + a.deals.rules + a.deals.fallback;
   const share = deals ? Math.round((a.deals.model / deals) * 100) : 0;
   const tag = (src: string) => `<span class="tag ${src === 'llm' ? '' : 'red'}">${src === 'llm' ? 'LLM' : src === 'fallback' ? 'rules (model failed)' : 'rules'}</span>`;
-  return `<div class="kv small"><span>Agent deals by the model</span><span class="mono">${a.deals.model}/${deals} (${share}%)</span></div>
+  const st = a.status;
+  const down = !!st?.lastErrorAt && (!st.lastOkAt || st.lastErrorAt > st.lastOkAt);
+  const ago = (t?: string) => (t ? `${Math.max(0, Math.round((Date.now() - Date.parse(t)) / 60000))} min ago` : 'not yet');
+  const health = !st ? '' : down
+    ? `<div class="kv small"><span><b>Model: unavailable</b>, NPCs run on the rules</span><span class="mono">last answer ${ago(st.lastOkAt)}</span></div><div class="muted small mono">${esc(st.lastError ?? '')}</div>`
+    : `<div class="kv small"><span>Model: answering</span><span class="mono">last answer ${ago(st.lastOkAt)}</span></div>`;
+  return `${health}<div class="kv small"><span>Agent deals by the model</span><span class="mono">${a.deals.model}/${deals} (${share}%)</span></div>
   <div class="kv small"><span>Deals by rules · model failed</span><span class="mono">${a.deals.rules} · ${a.deals.fallback}</span></div>
   ${a.plans ? `<div class="kv small"><span>Day plans by the model · failed</span><span class="mono">${a.plans.model} · ${a.plans.failed}</span></div>` : '<div class="muted small">No model configured: every decision is rules.</div>'}
   <div class="muted small">The model (${esc(a.model ?? 'none')}) decides every day while someone plays or watches, and one day in every 15 minutes otherwise; rules decide the rest, and each decision says which. Model decisions are listed first.</div>

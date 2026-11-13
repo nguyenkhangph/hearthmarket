@@ -94,7 +94,7 @@ describe('agent deals: negotiation', () => {
     const n = new Negotiator(down, { everyMs: 0 });
     await n.onNewDay(v);
     expect(n.failures).toBe(dealPairs().length);
-    expect(v.s.deals?.every((d) => d.by === 'rules (model unavailable)')).toBe(true);
+    expect(v.s.deals?.every((d) => d.by.startsWith('rules (model unavailable: '))).toBe(true);
   });
 
   it('reads model turns robustly', () => {

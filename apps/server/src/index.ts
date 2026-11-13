@@ -13,7 +13,7 @@ import { NpcBrain } from './brain/brain.ts';
 import { DayPlanner } from './brain/planner.ts';
 import { Negotiator } from './brain/negotiator.ts';
 import { negotiateContract } from './brain/contract.ts';
-import { OpenAiCompatible, WithFallback } from './brain/llm.ts';
+import { OpenAiCompatible, WithFallback, modelStatus } from './brain/llm.ts';
 import { MockChain, NpcSigner, type ChainAdapter } from './chain/signer.ts';
 import { NearChain, parseRpcUrls, withBalances } from './chain/near.ts';
 import { ChainMirror, type WorldPostInput } from './chain/mirror.ts';
@@ -238,6 +238,7 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify({
       ok: true, commit: (process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT ?? 'dev').slice(0, 7), day: v.day, hour: v.hour, players: Object.keys(v.s.players).length, brain: brain.name, chain: chain.kind,
       chainStats: mirror ? { ...mirror.stats, active: mirror.isActive, balances: mirror.balances } : undefined, rpcStats: chain instanceof NearChain ? chain.stats : undefined, plans: planner ? { calls: planner.calls, failures: planner.failures } : undefined,
+      model: llm ? { name: llm.name, ...modelStatus } : undefined,
       deals: { by: negotiator.name, calls: negotiator.calls, failures: negotiator.failures, sources: negotiator.sources, lastModelAt: negotiator.lastModelAt, idleModelMinutes: config.idleModelMinutes },
       challengeContracts: contractCalls,
     }));
@@ -250,7 +251,7 @@ const http = createServer((req, res) => {
     res.end(JSON.stringify(dashboardView(v, {
       online: sessions.size, brain: brain.name, chain: chain.kind, contract: config.near.contract, mirror, redTeam, startedAt,
       playerAccount: (id) => accounts.get(id) ?? null,
-      ai: { deals: negotiator.sources, plans: planner ? { model: planner.calls - planner.failures, failed: planner.failures } : undefined, model: llm?.name },
+      ai: { deals: negotiator.sources, plans: planner ? { model: planner.calls - planner.failures, failed: planner.failures } : undefined, model: llm?.name, status: llm ? modelStatus : undefined },
     })));
   } else if (req.url === '/api/challenge/contract' && req.method === 'POST') {
     // harvest challenge: Chloe negotiates the contract price on the model (text/plain JSON: no CORS preflight)

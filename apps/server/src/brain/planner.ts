@@ -1,4 +1,5 @@
-import { NPCS, type NpcId, type Village } from '@hearth/economy';
+import { NPCS, NPC_DEFS, type NpcId, type Village } from '@hearth/economy';
+import { shortReason } from './llm.ts';
 import type { NpcBrain } from './brain.ts';
 
 /**
@@ -11,6 +12,7 @@ export class DayPlanner {
   private running = false;
   calls = 0;
   failures = 0;
+  private failNotedDay = -1;
 
   constructor(
     private brain: NpcBrain,
@@ -40,6 +42,11 @@ export class DayPlanner {
       } catch (e) {
         this.failures++;
         this.opts.log?.(`brain plan failed for ${id}: ${(e as Error).message}`);
+        // say so in the feed, once a game day: the NPC keeps yesterday's plan and the rules run the day
+        if (this.failNotedDay !== v.day) {
+          this.failNotedDay = v.day;
+          v.feed('think', `${NPC_DEFS[id].name} could not reach NEAR AI Cloud (${shortReason(e)}): yesterday's plan holds and the rules run today. Nothing is hidden: /api/health shows the error too.`, id);
+        }
       }
     }
   }

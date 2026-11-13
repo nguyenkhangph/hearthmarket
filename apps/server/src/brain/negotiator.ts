@@ -2,7 +2,7 @@ import {
   DEAL_MAX_ROUNDS, NPC_DEFS, dealPairs, fmt, itemUse, midPrice, negotiateRules,
   type DealRound, type ItemId, type NpcId, type Village,
 } from '@hearth/economy';
-import { extractJson, type ChatMessage, type LlmClient } from './llm.ts';
+import { extractJson, shortReason, type ChatMessage, type LlmClient } from './llm.ts';
 
 /**
  * Agent-to-agent negotiation. Each morning (at most once per `everyMs` per pair) a buyer and
@@ -179,7 +179,7 @@ export class Negotiator {
         this.sources.fallback++;
         this.opts.log?.(`negotiation ${p.buyer}/${p.seller} ${p.item} failed, using rules: ${(e as Error).message}`);
         res = negotiateRules(v, p);
-        by = 'rules (model unavailable)';
+        by = `rules (model unavailable: ${shortReason(e)})`;
       }
       // a model reply that arrives after the day turned is too late for that day
       if (v.day !== day) return;

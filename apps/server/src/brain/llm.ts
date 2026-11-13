@@ -17,6 +17,20 @@ export interface LlmEndpoint {
   timeoutMs?: number;
 }
 
+/**
+ * Health of the model endpoint as seen by the game: when it last answered, and the last
+ * error in short (HTTP status and the provider's message, never the key). Shown on
+ * /api/health, the dashboard and in the feed when NPCs fall back to the rules.
+ */
+export const modelStatus: { lastOkAt?: string; lastErrorAt?: string; lastError?: string; errors: number } = { errors: 0 };
+
+/** One short line for the feed: "HTTP 402: insufficient credits" → "HTTP 402: insufficient credits". */
+export function shortReason(e: unknown): string {
+  const m = (e as Error)?.message ?? String(e);
+  if (/abort|timeout/i.test(m)) return 'timed out';
+  return m.replace(/^[^:]*?(HTTP \d+)/, '$1').replace(/Bearer\s+\S+|sk-[\w-]+/g, '…').replace(/\s+/g, ' ').slice(0, 90);
+}
+
 /** NEAR AI Cloud, OpenAI-compatible (https://docs.near.ai/cloud/guides/openai-compatibility). */
 export const NEAR_AI_DEFAULT_BASE_URL = 'https://cloud-api.near.ai/v1';
 
@@ -32,6 +46,18 @@ export class OpenAiCompatible implements LlmClient {
     return `${this.ep.name} (${this.ep.model})`;
   }
   async complete(messages: ChatMessage[]): Promise<string> {
+    try {
+      const out = await this.completeRaw(messages);
+      modelStatus.lastOkAt = new Date().toISOString();
+      return out;
+    } catch (e) {
+      modelStatus.errors++;
+      modelStatus.lastErrorAt = new Date().toISOString();
+      modelStatus.lastError = `${this.ep.name}: ${shortReason(e)}`;
+      throw e;
+    }
+  }
+  private async completeRaw(messages: ChatMessage[]): Promise<string> {
     const res = await this.fetchImpl(`${this.ep.baseUrl.replace(/\/$/, '')}/chat/completions`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${this.ep.apiKey}` },
