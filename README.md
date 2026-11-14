@@ -2,9 +2,13 @@
 
 A pixel-art village where six NPCs run their own businesses, each with its own NEAR account and key. While someone is playing or watching, their decisions come from a language model on NEAR AI Cloud; with nobody online the hosted village still runs one model day every 15 minutes and the same built-in rules in between, and guest mode runs on the rules (see *What uses AI, and what does not*). They negotiate prices with each other, hire each other and fill player orders, and every deal is a transaction signed by the agent's own key, inside limits the agent cannot break. Real weather in five producing regions moves world prices, and the price of real (tokenized) gold, read from NEAR Intents, sets what village gold is worth. Players sign in with Google, never see a wallet, and can claim their NEAR account whenever they like.
 
-Built at **NEAR HACKATHON 2026** for the **Games With Real Economies** track (also fits Agent Economy, AI Swarms, AI Security, Social Money).
+Built at **NEAR HACKATHON 2026**. Tracks: **Games With Real Economies** (main), Agent Economy, AI Swarms, AI Security & Defense, Autonomous Business.
 
-> Status, 10 Nov 2026: the contract (version 6: NEP-141 gold, NEP-171 badges, NEP-245 goods, NPC requests, stall-board escrow through a separate stalls contract) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and daily world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`) and fall back to rules otherwise. The **Status** table at the bottom says what runs today and what is still in progress.
+- **Live demo:** https://hearthmarket.space · guided tour, no sign-in: https://hearthmarket.space/?guest&tour
+- **Demo video (X):** https://x.com/tomdrawneth/status/2120420754978484542
+- **For judges:** [docs/judge-guide.md](docs/judge-guide.md) · server health (model, chain, NPC gas): https://hearthserver-production-97fb.up.railway.app/api/health
+
+> Status, 14 Nov 2026: submitted to NEAR HACKATHON 2026. The contract (version 6: NEP-141 gold, NEP-171 badges, NEP-245 goods, NPC requests, stall-board escrow through a separate stalls contract) runs on NEAR testnet at `hearthmarket.testnet`, and the hosted game mirrors NPC actions, agent deals, player trades and world data to it. Agent brains use NEAR AI Cloud when a key is set (`NPC_BRAIN=llm`); if the model is unavailable, NPCs fall back to rules, labelled as such in the feed (`thinks (rules)`, `rules (model unavailable: …)`) and on the dashboard, and on-chain actions keep working either way. The **Status** table at the bottom says what runs today.
 
 ## The problem
 
@@ -19,7 +23,7 @@ The same question matters outside games. AI agents are starting to buy and sell 
 
 ## Play it now
 
-- **Game:** https://hearthmarket.space (mirror: https://hearthmarket.vercel.app) (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
+- **Game:** https://hearthmarket.space (Play as guest runs offline in your browser; Sign in with Google joins the shared village on NEAR testnet)
 - **Judges:** [docs/judge-guide.md](docs/judge-guide.md): five claims, each checked in under a minute with a testnet transaction, and how to see whether the model or the rules are deciding right now
 - **Live economy:** https://hearthmarket.space/dashboard (no sign-in; while someone plays or watches, the agents think with NEAR AI Cloud and act on chain)
 

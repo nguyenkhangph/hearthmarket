@@ -1,0 +1,21 @@
+Hearthmarket
+Copyright (c) 2026 Pham Nguyen Khang
+
+The source code of this project is licensed under the MIT License
+(see the LICENSE file).
+
+Third-party assets
+------------------
+Pixel art: "Cute Fantasy RPG" asset pack (c) Kenmi,
+https://kenmi-art.itch.io/cute-fantasy-rpg
+These art assets are NOT covered by this repository's MIT License and are
+NOT included in this repository: the pack's license allows use in games but
+not redistribution. The hosted game uses them under that license. To build
+the client with the art, buy the pack from its original source and follow
+its license (see "Credits" in the README).
+
+Third-party services
+--------------------
+On-chain actions run on NEAR Protocol (testnet).
+AI inference is provided by NEAR AI Cloud.
+Libraries are listed in the README ("Credits") and in each package.json.
